@@ -1,0 +1,24 @@
+goal_id: GOAL-000
+title: ""
+artist_intent: ""
+why_it_matters: ""
+deadline: YYYY-MM-DD
+baseline: null
+targets:
+  primary_metric: ""
+  target_value: null
+  secondary_metrics: []
+audience:
+  description: ""
+  territories: []
+constraints:
+  budget_ceiling: null
+  time: []
+  brand: []
+  legal: []
+owner_agency: executive
+supporting_agencies: []
+milestones: []
+risks: []
+approval_owner: ARTIST
+status: SCOPED
