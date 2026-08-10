@@ -2,7 +2,7 @@ name: Release Readiness Check
 description: Start the Artist OS release-readiness loop when the command is posted in the workflow channel.
 enabled: true
 trigger:
-  on: message_posted
+  "on": message_posted
   filter: 'str_contains(trigger_text, "RUN_RELEASE_READINESS")'
 steps:
   - id: acknowledge
