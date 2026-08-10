@@ -1,10 +1,24 @@
 name: Release Readiness Check
+description: Start the Artist OS release-readiness loop when the command is posted in the workflow channel.
+enabled: true
 trigger:
-  on: message
+  on: message_posted
+  filter: 'str_contains(trigger_text, "RUN_RELEASE_READINESS")'
 steps:
-  - id: request
+  - id: acknowledge
+    action: add_reaction
+    emoji: eyes
+
+  - id: dispatch
     action: send_message
-    channel: "#agency-release"
-    message: "@release-pm Run release readiness. Verify product, distribution, content, growth, PR, rights, budget and analytics dependencies. Escalate missing human approvals."
-# Implementation template: confirm exact trigger/action schema against the Buzz version deployed.
-# Do not use native approval actions for critical business decisions until end-to-end behavior is verified.
+    text: '@release-ceo @ops-ceo Run release readiness for the active release. Verify Music product readiness, Legal/Rights status, distribution/metadata, Content assets, Growth plan, PR plan, Finance/budget and Data measurement. Report GREEN / AMBER / RED / UNKNOWN with blocking evidence and required Artist decisions. Do not treat UNKNOWN as approved or cleared.'
+
+  - id: artist_gate
+    action: request_approval
+    from: '@artist-ceo'
+    message: 'Review the release-readiness report in this channel. Approve continuation only if material release-date, creative, rights and budget gates are acceptable. This approval is a workflow checkpoint and does not replace any separate contract, rights, payment or final-master approval.'
+    timeout: 24h
+
+  - id: approved
+    action: send_message
+    text: 'Release-readiness checkpoint approved. @release-ceo continue only with actions already within delegated authority. Keep binding commitments, rights changes, money movement, sensitive public statements and destructive actions behind their specific human approval gates.'
