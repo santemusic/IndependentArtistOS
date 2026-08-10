@@ -1,0 +1,155 @@
+version: 1
+status: design
+policy:
+  default_access: deny
+  secrets_in_git: false
+  external_writes_require_verification: true
+  irreversible_actions_require_human_approval: true
+  enable_only_after_step20_runtime_pass: true
+
+integrations:
+  - id: github
+    category: source_control
+    business_owner: automation-ceo
+    technical_owner: integration-api
+    intended_agencies: [automation, operations, executive]
+    mode: read_write_controlled
+    risk_class: R2
+    source_of_truth: github
+    auth: operator_managed
+    status: connected_outside_buzz
+    notes: Repository management is currently available through the connected GitHub integration used to maintain this OS. Buzz MCP enablement is a separate deployment decision.
+
+  - id: calendar
+    category: scheduling
+    business_owner: ops-ceo
+    technical_owner: integration-api
+    intended_agencies: [operations, executive, live, release]
+    mode: read_first
+    risk_class: R2
+    source_of_truth: external_calendar
+    auth: oauth_or_operator_managed
+    status: planned
+    phase_1_scope: [read_events, read_availability]
+    phase_2_scope: [create_draft_or_controlled_events]
+
+  - id: email
+    category: communications
+    business_owner: relationship-ceo
+    technical_owner: integration-api
+    intended_agencies: [executive, relationships, pr, partnerships, operations]
+    mode: draft_first
+    risk_class: R3
+    source_of_truth: external_mailbox
+    auth: oauth_or_operator_managed
+    status: planned
+    phase_1_scope: [search, read]
+    phase_2_scope: [create_draft]
+    blocked_until_explicit_approval: [send, forward]
+
+  - id: cloud_drive
+    category: files
+    business_owner: ops-ceo
+    technical_owner: integration-api
+    intended_agencies: [music, release, content, legal, finance, operations]
+    mode: read_first
+    risk_class: R2
+    source_of_truth: external_drive
+    auth: oauth_or_operator_managed
+    status: planned
+    phase_1_scope: [search, read_metadata, read_authorized_files]
+    phase_2_scope: [create_controlled_project_folders, upload_approved_assets]
+
+  - id: music_distribution
+    category: distribution
+    business_owner: release-ceo
+    technical_owner: integration-api
+    intended_agencies: [release, music]
+    mode: prepare_then_human_execute
+    risk_class: R4
+    source_of_truth: distributor
+    auth: operator_managed
+    status: planned
+    phase_1_scope: [read_catalog, read_delivery_status]
+    blocked_until_explicit_approval: [submit_release, edit_live_release, takedown]
+
+  - id: dsp_analytics
+    category: music_analytics
+    business_owner: data-ceo
+    technical_owner: integration-api
+    intended_agencies: [data, release, growth, music]
+    mode: read_only
+    risk_class: R0
+    source_of_truth: dsp_or_analytics_provider
+    auth: oauth_or_operator_managed
+    status: planned
+    phase_1_scope: [read_performance_data]
+
+  - id: social_analytics
+    category: social
+    business_owner: growth-ceo
+    technical_owner: integration-api
+    intended_agencies: [growth, content, data]
+    mode: read_first
+    risk_class: R3
+    source_of_truth: social_platform
+    auth: oauth_or_operator_managed
+    status: planned
+    phase_1_scope: [read_posts, read_metrics]
+    phase_2_scope: [schedule_approved_content]
+    blocked_until_explicit_approval: [publish_sensitive_content, delete_posts]
+
+  - id: crm_fans
+    category: fan_crm
+    business_owner: growth-ceo
+    technical_owner: integration-api
+    intended_agencies: [growth, data]
+    mode: read_first
+    risk_class: R3
+    source_of_truth: crm
+    auth: oauth_or_operator_managed
+    status: planned
+    phase_1_scope: [read_segments, read_campaign_metrics]
+    phase_2_scope: [create_draft_campaigns]
+    blocked_until_explicit_approval: [send_campaign]
+
+  - id: crm_professional
+    category: professional_crm
+    business_owner: relationship-ceo
+    technical_owner: integration-api
+    intended_agencies: [relationships, partnerships, pr, live, executive]
+    mode: read_first
+    risk_class: R3
+    source_of_truth: professional_crm
+    auth: oauth_or_operator_managed
+    status: planned
+    phase_1_scope: [search_contacts, read_interaction_history]
+    phase_2_scope: [create_internal_notes, create_followup_tasks]
+    blocked_until_explicit_approval: [external_outreach]
+
+  - id: finance_accounting
+    category: finance
+    business_owner: finance-ceo
+    technical_owner: integration-api
+    intended_agencies: [finance, executive]
+    mode: read_only_first
+    risk_class: R5
+    source_of_truth: accounting_or_bank_system
+    auth: operator_managed
+    status: planned
+    phase_1_scope: [read_transactions, read_invoices, read_balances]
+    blocked_until_explicit_approval: [money_movement, vendor_bank_change, tax_filing]
+
+  - id: ecommerce
+    category: commerce
+    business_owner: commerce-ceo
+    technical_owner: integration-api
+    intended_agencies: [commerce, finance, data, growth]
+    mode: read_first
+    risk_class: R4
+    source_of_truth: ecommerce_platform
+    auth: oauth_or_operator_managed
+    status: planned
+    phase_1_scope: [read_orders, read_inventory, read_products]
+    phase_2_scope: [update_inventory_metadata, create_draft_products]
+    blocked_until_explicit_approval: [refund, capture_payment, destructive_catalog_change]
