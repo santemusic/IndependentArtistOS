@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "example-readonly-service": {
+      "command": "REPLACE_WITH_MCP_SERVER_COMMAND",
+      "args": ["REPLACE_WITH_STDIO_ARGS"],
+      "env": {
+        "SERVICE_TOKEN": "SET_IN_OPERATOR_ENVIRONMENT_OR_RUNTIME_SECRET_STORE"
+      }
+    }
+  }
+}
