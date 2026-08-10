@@ -1,0 +1,10 @@
+name: Release Readiness Check
+trigger:
+  on: message
+steps:
+  - id: request
+    action: send_message
+    channel: "#agency-release"
+    message: "@release-pm Run release readiness. Verify product, distribution, content, growth, PR, rights, budget and analytics dependencies. Escalate missing human approvals."
+# Implementation template: confirm exact trigger/action schema against the Buzz version deployed.
+# Do not use native approval actions for critical business decisions until end-to-end behavior is verified.
