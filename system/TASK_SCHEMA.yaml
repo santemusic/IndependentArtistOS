@@ -1,0 +1,17 @@
+task_id: TASK-000
+goal_id: GOAL-000
+project_id: PROJECT-000
+title: ""
+agency: ""
+owner_agent: ""
+priority: P2
+status: SCOPED
+deadline: YYYY-MM-DD
+inputs_required: []
+dependencies: []
+deliverable: ""
+definition_of_done: []
+approval_owner: ""
+handoff_to: ""
+files_or_links: []
+risks: []
