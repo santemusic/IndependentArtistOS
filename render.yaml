@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: independent-artist-os-mcp
+    runtime: node
+    rootDir: mcp
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeployTrigger: off
+    envVars:
+      - key: NOTION_TOKEN
+        sync: false
+      - key: MUSIC_OS_ARTIST_ID
+        value: default
+      - key: MUSIC_OS_ARTIST_CONTEXT_PAGE_ID
+        sync: false
+      - key: MUSIC_OS_PROJECTS_DATABASE_ID
+        sync: false
+      - key: MUSIC_OS_TASKS_DATABASE_ID
+        sync: false
+      - key: MUSIC_OS_AUTOMATION_RUNS_DATABASE_ID
+        sync: false
+      - key: MUSIC_OS_RUNTIME_MODE
+        value: SUPERVISED
+      - key: MUSIC_OS_EXTERNAL_ACTIONS
+        value: APPROVAL_ONLY
