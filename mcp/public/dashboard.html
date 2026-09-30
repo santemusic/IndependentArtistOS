@@ -15,7 +15,6 @@
     .row { display:flex; justify-content:space-between; gap:16px; align-items:center; }
     .pill { background:#26262a; padding:6px 10px; border-radius:999px; font-size:12px; }
     button { background:#f5f5f5; color:#111; border:0; border-radius:12px; padding:11px 14px; font-weight:600; cursor:pointer; }
-    .actions { display:flex; flex-wrap:wrap; gap:8px; }
   </style>
 </head>
 <body>
@@ -38,11 +37,12 @@
       <div class="big" id="bottleneck">—</div>
     </div>
     <div class="card">
-      <div class="eyebrow">Actions</div>
-      <div class="actions">
-        <button data-prompt="Plan my week based on my current Artist OS.">Plan my week</button>
-        <button data-prompt="Review my progress and tell me what needs attention.">Review progress</button>
-        <button data-prompt="Help me grow. Diagnose the highest-leverage bottleneck and give me the next actions.">Help me grow</button>
+      <div class="row">
+        <div>
+          <div class="eyebrow">Live state</div>
+          <div class="muted">Refreshes from your Music OS.</div>
+        </div>
+        <button id="refresh">Refresh</button>
       </div>
     </div>
   </div>
@@ -101,6 +101,11 @@
       if (message.method === "ui/notifications/tool-result") updateFromResponse(message.params);
     });
 
+    async function refresh() {
+      const response = await rpcRequest("tools/call", { name: "get_operating_snapshot", arguments: {} });
+      updateFromResponse(response);
+    }
+
     async function init() {
       await rpcRequest("ui/initialize", {
         appInfo: { name: "artist-os-dashboard", version: "0.2.0" },
@@ -108,16 +113,10 @@
         protocolVersion: "2026-01-26"
       });
       rpcNotify("ui/notifications/initialized", {});
-      const response = await rpcRequest("tools/call", { name: "get_operating_snapshot", arguments: {} });
-      updateFromResponse(response);
+      await refresh();
     }
 
-    document.querySelectorAll("button[data-prompt]").forEach((button) => {
-      button.addEventListener("click", () => {
-        rpcNotify("ui/message", { role: "user", content: [{ type: "text", text: button.dataset.prompt }] });
-      });
-    });
-
+    document.getElementById("refresh").addEventListener("click", () => refresh().catch(console.error));
     init().catch(console.error);
   </script>
 </body>
