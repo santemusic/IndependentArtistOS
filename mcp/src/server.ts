@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import {
   registerAppResource,
   registerAppTool,
@@ -27,6 +27,18 @@ function asText(value: unknown) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
   };
+}
+
+function hasValidBearerToken(authorizationHeader: string | undefined): boolean {
+  const expected = process.env.MCP_AUTH_TOKEN;
+  if (!expected || !authorizationHeader?.startsWith("Bearer ")) return false;
+
+  const supplied = authorizationHeader.slice("Bearer ".length).trim();
+  const suppliedBytes = Buffer.from(supplied);
+  const expectedBytes = Buffer.from(expected);
+
+  if (suppliedBytes.length !== expectedBytes.length) return false;
+  return timingSafeEqual(suppliedBytes, expectedBytes);
 }
 
 function createMusicOsServer() {
@@ -214,7 +226,7 @@ const httpServer = createServer(async (req, res) => {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "content-type, mcp-session-id",
+      "Access-Control-Allow-Headers": "authorization, content-type, mcp-session-id",
       "Access-Control-Expose-Headers": "Mcp-Session-Id",
     });
     res.end();
@@ -223,6 +235,21 @@ const httpServer = createServer(async (req, res) => {
 
   const allowedMethods = new Set(["POST", "GET", "DELETE"]);
   if (url.pathname === MCP_PATH && req.method && allowedMethods.has(req.method)) {
+    if (!process.env.MCP_AUTH_TOKEN) {
+      res.writeHead(503, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ error: "MCP authentication is not configured" }));
+      return;
+    }
+
+    if (!hasValidBearerToken(req.headers.authorization)) {
+      res.writeHead(401, {
+        "content-type": "application/json; charset=utf-8",
+        "WWW-Authenticate": "Bearer",
+      });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
 
