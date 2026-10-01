@@ -1,8 +1,11 @@
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import {
+  createCipheriv,
+  createDecipheriv,
   createHash,
   createHmac,
+  randomBytes,
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
@@ -96,16 +99,61 @@ function verifyClientId(clientId: string, redirectUri?: string): boolean {
   return !redirectUri || payload.redirect_uris.includes(redirectUri);
 }
 
-function verifyAccessToken(authorizationHeader: string | undefined): boolean {
-  if (!authorizationHeader?.startsWith("Bearer ")) return false;
+function verifyAccessToken(authorizationHeader: string | undefined): Record<string, any> | null {
+  if (!authorizationHeader?.startsWith("Bearer ")) return null;
   const token = authorizationHeader.slice("Bearer ".length).trim();
   const payload = verifySignedPayload(token);
-  return Boolean(
-    payload &&
-      payload.kind === "access" &&
-      payload.aud === resourceId &&
-      typeof payload.scope === "string",
-  );
+  if (
+    !payload ||
+    payload.kind !== "access" ||
+    payload.aud !== resourceId ||
+    typeof payload.scope !== "string"
+  ) return null;
+  return payload;
+}
+
+function encryptionKey(): Buffer {
+  return createHash("sha256").update(secret()).digest();
+}
+
+function encryptConnection(value: Record<string, unknown>): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const ciphertext = Buffer.concat([
+    cipher.update(JSON.stringify(value), "utf8"),
+    cipher.final(),
+  ]);
+  const tag = cipher.getAuthTag();
+  return [iv, tag, ciphertext].map((part) => part.toString("base64url")).join(".");
+}
+
+function decryptConnection(value: string | undefined): Record<string, any> | null {
+  if (!value) return null;
+  const [ivText, tagText, dataText] = value.split(".");
+  if (!ivText || !tagText || !dataText) return null;
+  try {
+    const decipher = createDecipheriv(
+      "aes-256-gcm",
+      encryptionKey(),
+      Buffer.from(ivText, "base64url"),
+    );
+    decipher.setAuthTag(Buffer.from(tagText, "base64url"));
+    const plaintext = Buffer.concat([
+      decipher.update(Buffer.from(dataText, "base64url")),
+      decipher.final(),
+    ]).toString("utf8");
+    return JSON.parse(plaintext);
+  } catch {
+    return null;
+  }
+}
+
+function notionOauthConfigured(): boolean {
+  return Boolean(process.env.NOTION_OAUTH_CLIENT_ID && process.env.NOTION_OAUTH_CLIENT_SECRET);
+}
+
+function notionRedirectUri(): string {
+  return `${publicOrigin}/oauth/notion/callback`;
 }
 
 function writeJson(res: any, status: number, body: unknown, extraHeaders: Record<string, string> = {}) {
@@ -171,8 +219,15 @@ function authorizationPage(params: URLSearchParams, error?: string): string {
 </html>`;
 }
 
-function createMusicOsServer() {
-  const adapter = new NotionAdapter();
+function createMusicOsServer(authPayload: Record<string, any> = {}) {
+  const connection = decryptConnection(authPayload.conn);
+  const adapter = connection?.token
+    ? new NotionAdapter({ token: connection.token })
+    : new NotionAdapter();
+  const currentArtistId = () =>
+    (typeof authPayload.sub === "string" && authPayload.sub) ||
+    process.env.MUSIC_OS_ARTIST_ID ||
+    "default";
   const server = new McpServer({
     name: "independent-artist-os",
     version: "0.3.0",
@@ -203,7 +258,7 @@ function createMusicOsServer() {
     "get_artist_context",
     "Read the live Artist Master Context for the current artist.",
     {},
-    async () => asText(await adapter.getArtistContext(artistId())),
+    async () => asText(await adapter.getArtistContext(currentArtistId())),
   );
 
   registerAppTool(
@@ -241,7 +296,7 @@ function createMusicOsServer() {
       },
     },
     async () => {
-      const snapshot = await adapter.getOperatingSnapshot(artistId());
+      const snapshot = await adapter.getOperatingSnapshot(currentArtistId());
       return {
         content: [{ type: "text" as const, text: "Opened the Artist OS management snapshot." }],
         structuredContent: { snapshot },
@@ -264,7 +319,7 @@ function createMusicOsServer() {
     },
     async (input) => {
       assertInternalWriteAllowed();
-      return asText(await adapter.createTask({ artistId: artistId(), ...input }));
+      return asText(await adapter.createTask({ artistId: currentArtistId(), ...input }));
     },
   );
 
@@ -282,7 +337,7 @@ function createMusicOsServer() {
     },
     async (input) => {
       assertInternalWriteAllowed();
-      return asText(await adapter.updateTask({ artistId: artistId(), ...input }));
+      return asText(await adapter.updateTask({ artistId: currentArtistId(), ...input }));
     },
   );
 
@@ -298,14 +353,14 @@ function createMusicOsServer() {
     async (input) => {
       assertExternalActionMayBeStaged();
       const fingerprint = actionFingerprint({
-        artistId: artistId(),
+        artistId: currentArtistId(),
         actionType: input.actionType,
         summary: input.summary,
         relatedObject: input.relatedObject ?? null,
       });
       return asText(
         await adapter.requestApproval({
-          artistId: artistId(),
+          artistId: currentArtistId(),
           ...input,
           actionFingerprint: fingerprint,
         }),
@@ -329,7 +384,7 @@ function createMusicOsServer() {
     async (input) => {
       assertInternalWriteAllowed();
       const runId = input.runId ?? randomUUID();
-      return asText(await adapter.logAgentRun({ artistId: artistId(), ...input, runId }));
+      return asText(await adapter.logAgentRun({ artistId: currentArtistId(), ...input, runId }));
     },
   );
 
@@ -427,11 +482,125 @@ const httpServer = createServer(async (req, res) => {
       return;
     }
 
+    if (notionOauthConfigured()) {
+      const now = Math.floor(Date.now() / 1000);
+      const state = signPayload({
+        kind: "notion_state",
+        request: Object.fromEntries(url.searchParams.entries()),
+        iat: now,
+        exp: now + 600,
+      });
+      const target = new URL("https://api.notion.com/v1/oauth/authorize");
+      target.searchParams.set("client_id", process.env.NOTION_OAUTH_CLIENT_ID!);
+      target.searchParams.set("response_type", "code");
+      target.searchParams.set("owner", "user");
+      target.searchParams.set("redirect_uri", notionRedirectUri());
+      target.searchParams.set("state", state);
+      res.writeHead(302, { location: target.toString(), "cache-control": "no-store" });
+      res.end();
+      return;
+    }
+
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
     });
     res.end(authorizationPage(url.searchParams));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/oauth/notion/callback") {
+    const code = url.searchParams.get("code") ?? "";
+    const state = url.searchParams.get("state") ?? "";
+    const statePayload = verifySignedPayload(state);
+    const request = statePayload?.kind === "notion_state" ? statePayload.request : null;
+
+    if (!code || !request || typeof request !== "object" || !notionOauthConfigured()) {
+      res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Invalid Notion OAuth callback.");
+      return;
+    }
+
+    const tokenResponse = await fetch("https://api.notion.com/v1/oauth/token", {
+      method: "POST",
+      headers: {
+        Authorization:
+          "Basic " +
+          Buffer.from(
+            process.env.NOTION_OAUTH_CLIENT_ID + ":" + process.env.NOTION_OAUTH_CLIENT_SECRET,
+          ).toString("base64"),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: notionRedirectUri(),
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      res.writeHead(502, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Notion authorization failed.");
+      return;
+    }
+
+    const notion: any = await tokenResponse.json();
+    if (!notion.access_token || !notion.workspace_id) {
+      res.writeHead(502, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Notion returned an incomplete authorization response.");
+      return;
+    }
+
+    const params = new URLSearchParams(
+      Object.entries(request).map(([key, value]) => [key, String(value ?? "")]),
+    );
+    const clientId = params.get("client_id") ?? "";
+    const redirectUri = params.get("redirect_uri") ?? "";
+    const codeChallenge = params.get("code_challenge") ?? "";
+    const stateBack = params.get("state") ?? "";
+    const scope = params.get("scope") ?? "artist_os:read artist_os:write";
+    const resource = params.get("resource") ?? "";
+
+    if (
+      params.get("response_type") !== "code" ||
+      params.get("code_challenge_method") !== "S256" ||
+      !codeChallenge ||
+      !verifyClientId(clientId, redirectUri) ||
+      !isTrustedRedirectUri(redirectUri) ||
+      resource !== resourceId
+    ) {
+      res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Invalid original ChatGPT OAuth request.");
+      return;
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const connection = encryptConnection({
+      token: notion.access_token,
+      workspaceId: notion.workspace_id,
+      workspaceName: notion.workspace_name,
+      botId: notion.bot_id,
+      duplicatedTemplateId: notion.duplicated_template_id,
+    });
+    const authCode = signPayload({
+      kind: "auth_code",
+      nonce: randomUUID(),
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      code_challenge: codeChallenge,
+      resource,
+      scope,
+      sub: notion.workspace_id,
+      conn: connection,
+      iat: now,
+      exp: now + 300,
+    });
+
+    const target = new URL(redirectUri);
+    target.searchParams.set("code", authCode);
+    if (stateBack) target.searchParams.set("state", stateBack);
+    res.writeHead(302, { location: target.toString(), "cache-control": "no-store" });
+    res.end();
     return;
   }
 
@@ -523,7 +692,8 @@ const httpServer = createServer(async (req, res) => {
         kind: "access",
         aud: resourceId,
         scope: payload.scope,
-        sub: "artist-os-owner",
+        sub: payload.sub ?? "artist-os-owner",
+        conn: payload.conn,
         iat: now,
         exp: now + 3600,
       });
@@ -531,7 +701,8 @@ const httpServer = createServer(async (req, res) => {
         kind: "refresh",
         aud: resourceId,
         scope: payload.scope,
-        sub: "artist-os-owner",
+        sub: payload.sub ?? "artist-os-owner",
+        conn: payload.conn,
         iat: now,
         exp: now + 60 * 60 * 24 * 30,
       });
@@ -558,6 +729,7 @@ const httpServer = createServer(async (req, res) => {
         aud: resourceId,
         scope: payload.scope,
         sub: payload.sub,
+        conn: payload.conn,
         iat: now,
         exp: now + 3600,
       });
@@ -593,7 +765,8 @@ const httpServer = createServer(async (req, res) => {
       return;
     }
 
-    if (!verifyAccessToken(req.headers.authorization)) {
+    const authPayload = verifyAccessToken(req.headers.authorization);
+    if (!authPayload) {
       writeJson(
         res,
         401,
@@ -609,7 +782,7 @@ const httpServer = createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
 
-    const server = createMusicOsServer();
+    const server = createMusicOsServer(authPayload);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
