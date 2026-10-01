@@ -20,6 +20,8 @@ The first backend adapter is Notion. Agents call semantic Music OS tools rather 
 - External actions can only be staged when runtime controls permit it.
 - `request_approval` creates a pending approval task; it never executes the external action.
 - No payment, contract, rights, distributor, publishing or destructive external execution tools exist in v0.1.
+- Hosted `/mcp` requests require `Authorization: Bearer <MCP_AUTH_TOKEN>`.
+- The MCP endpoint fails closed when `MCP_AUTH_TOKEN` is missing.
 - Repository rules in `system/PERMISSIONS.md` and `STEP21_INTEGRATIONS.md` remain authoritative.
 
 ## Run locally
@@ -34,9 +36,25 @@ npm start
 
 Configure values from `.env.example` through the runtime secret store. Do not commit real credentials.
 
+## Hosted MCP configuration
+
+The hosted Streamable HTTP endpoint is:
+
+```text
+https://<service-host>/mcp
+```
+
+Clients must send:
+
+```text
+Authorization: Bearer <MCP_AUTH_TOKEN>
+```
+
+Keep `MCP_AUTH_TOKEN` in the client and server secret stores only. Rotate it if it is ever exposed.
+
 ## MCP host configuration
 
-Use the built server through stdio, for example:
+For local stdio use, run the built server directly, for example:
 
 ```json
 {
@@ -57,5 +75,5 @@ The host/runtime must inject the Notion token and database/page IDs.
 2. Server-side `find_equivalent_action` idempotency lookup.
 3. Semantic release-readiness/module-context tools.
 4. Approval tokens before any external execution tools are added.
-5. Authenticated `streamable_http` deployment for hosted ChatGPT use.
+5. OAuth or equivalent managed identity for hosted multi-user deployments.
 6. Sandbox integration tests against a non-production artist workspace.
