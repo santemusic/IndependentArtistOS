@@ -1,6 +1,6 @@
 {
   "name": "@independent-artist-os/music-os-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Governed MCP server for Independent Artist OS",
@@ -13,11 +13,13 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.2",
     "@modelcontextprotocol/ext-apps": "^1.0.1",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "@types/pg": "^8.11.10"
   }
 }
