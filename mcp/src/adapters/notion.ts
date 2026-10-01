@@ -12,7 +12,16 @@ import type {
 import { getRuntimeControl } from "../governance.js";
 import type { MusicOsAdapter } from "./adapter.js";
 
-type NotionPage = { id: string; url?: string; properties?: Record<string, unknown> };
+type NotionPage = { id: string; url?: string; properties?: Record<string, unknown>; object?: string; title?: unknown[] };
+
+export interface NotionAdapterConfig {
+  token?: string;
+  artistContextPageId?: string;
+  projectsDatabaseId?: string;
+  tasksDatabaseId?: string;
+  automationRunsDatabaseId?: string;
+}
+
 const NOTION_VERSION = "2022-06-28";
 
 function requiredEnv(name: string): string {
@@ -39,11 +48,83 @@ function propertyText(page: NotionPage, name: string): string | undefined {
 }
 
 export class NotionAdapter implements MusicOsAdapter {
-  private readonly token = requiredEnv("NOTION_TOKEN");
-  private readonly artistContextPageId = requiredEnv("MUSIC_OS_ARTIST_CONTEXT_PAGE_ID");
-  private readonly projectsDb = requiredEnv("MUSIC_OS_PROJECTS_DATABASE_ID");
-  private readonly tasksDb = requiredEnv("MUSIC_OS_TASKS_DATABASE_ID");
-  private readonly runsDb = requiredEnv("MUSIC_OS_AUTOMATION_RUNS_DATABASE_ID");
+  private readonly token: string;
+  private artistContextPageId?: string;
+  private projectsDb?: string;
+  private tasksDb?: string;
+  private runsDb?: string;
+  private resourcesResolved = false;
+
+  constructor(config: NotionAdapterConfig = {}) {
+    this.token = config.token ?? requiredEnv("NOTION_TOKEN");
+    this.artistContextPageId = config.artistContextPageId ?? process.env.MUSIC_OS_ARTIST_CONTEXT_PAGE_ID;
+    this.projectsDb = config.projectsDatabaseId ?? process.env.MUSIC_OS_PROJECTS_DATABASE_ID;
+    this.tasksDb = config.tasksDatabaseId ?? process.env.MUSIC_OS_TASKS_DATABASE_ID;
+    this.runsDb = config.automationRunsDatabaseId ?? process.env.MUSIC_OS_AUTOMATION_RUNS_DATABASE_ID;
+    this.resourcesResolved = Boolean(this.artistContextPageId && this.projectsDb && this.tasksDb && this.runsDb);
+  }
+
+  private titleOf(item: any): string {
+    if (item?.object === "database") return plainText(item.title) ?? "";
+    const properties = item?.properties ?? {};
+    for (const value of Object.values(properties) as any[]) {
+      if (value?.type === "title") return plainText(value.title) ?? "";
+    }
+    return "";
+  }
+
+  private async resolveResources(): Promise<void> {
+    if (this.resourcesResolved) return;
+
+    const result = await this.request("/search", {
+      method: "POST",
+      body: JSON.stringify({ page_size: 100 }),
+    });
+
+    const items = result.results ?? [];
+    const normalized = items.map((item: any) => ({
+      id: item.id as string,
+      object: item.object as string,
+      title: this.titleOf(item).trim(),
+    }));
+
+    const findOne = (object: string, candidates: string[]): string | undefined => {
+      const matches = normalized.filter((item: any) => {
+        if (item.object !== object) return false;
+        const title = item.title.toLowerCase();
+        return candidates.some((candidate) => title === candidate || title.includes(candidate));
+      });
+      if (matches.length === 1) return matches[0].id;
+      if (matches.length > 1) {
+        const exact = matches.find((item: any) => candidates.includes(item.title.toLowerCase()));
+        if (exact) return exact.id;
+      }
+      return undefined;
+    };
+
+    this.artistContextPageId ??= findOne("page", [
+      "artist master context",
+      "command center",
+      "welcome to your new music os",
+    ]);
+    this.projectsDb ??= findOne("database", ["projects", "project"]);
+    this.tasksDb ??= findOne("database", ["tasks", "task"]);
+    this.runsDb ??= findOne("database", ["automation runs", "agent runs", "runs"]);
+
+    if (!this.artistContextPageId || !this.projectsDb || !this.tasksDb || !this.runsDb) {
+      const visible = normalized
+        .filter((item: any) => item.title)
+        .map((item: any) => `${item.object}: ${item.title}`)
+        .join(", ");
+      throw new Error(
+        "Could not auto-discover the Music OS pages/databases in this Notion connection. " +
+          "Expected Artist Master Context/Command Center, Projects, Tasks, and Automation Runs. " +
+          "Visible objects: " + visible,
+      );
+    }
+
+    this.resourcesResolved = true;
+  }
 
   private async request(path: string, init: RequestInit = {}): Promise<any> {
     const response = await fetch("https://api.notion.com/v1" + path, {
@@ -86,7 +167,8 @@ export class NotionAdapter implements MusicOsAdapter {
   }
 
   async getArtistContext(artistId: string): Promise<ArtistContext> {
-    const text = await this.readPageText(this.artistContextPageId);
+    await this.resolveResources();
+    const text = await this.readPageText(this.artistContextPageId!);
     const weeklyTop3 = [1, 2, 3]
       .map((n) => this.valueAfterLabel("Priority #" + n, text))
       .filter((v): v is string => Boolean(v));
@@ -114,13 +196,14 @@ export class NotionAdapter implements MusicOsAdapter {
   }
 
   async getOperatingSnapshot(artistId: string): Promise<OperatingSnapshot> {
+    await this.resolveResources();
     const [artist, projectPages, taskPages] = await Promise.all([
       this.getArtistContext(artistId),
-      this.queryDatabase(this.projectsDb, {
+      this.queryDatabase(this.projectsDb!, {
         page_size: 50,
         filter: { property: "Status", status: { does_not_equal: "Archived" } },
       }),
-      this.queryDatabase(this.tasksDb, {
+      this.queryDatabase(this.tasksDb!, {
         page_size: 100,
         filter: { property: "Status", status: { does_not_equal: "Done" } },
       }),
@@ -154,6 +237,7 @@ export class NotionAdapter implements MusicOsAdapter {
   }
 
   async createTask(input: CreateTaskInput): Promise<TaskRecord> {
+    await this.resolveResources();
     const properties: Record<string, unknown> = {
       Task: { title: [{ text: { content: input.task } }] },
       Status: { status: { name: input.status ?? "Not Started" } },
@@ -226,6 +310,7 @@ export class NotionAdapter implements MusicOsAdapter {
   }
 
   async logAgentRun(input: AgentRunInput): Promise<{ runId: string; url?: string }> {
+    await this.resolveResources();
     const properties: Record<string, unknown> = {
       "Run ID": { title: [{ text: { content: input.runId } }] },
       "Source Agent": { select: { name: input.sourceAgent } },
