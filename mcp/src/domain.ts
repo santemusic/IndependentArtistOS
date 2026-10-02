@@ -104,3 +104,74 @@ export interface AgentRunInput {
   relatedObject?: string;
   notes?: string;
 }
+
+
+export type WorkflowState =
+  | "NOT_STARTED"
+  | "CONTEXT_CHECK"
+  | "READY"
+  | "RUNNING"
+  | "WAITING_FOR_DATA"
+  | "WAITING_FOR_APPROVAL"
+  | "EXECUTING"
+  | "MEASURING"
+  | "COMPLETED"
+  | "BLOCKED";
+
+export interface WorkflowDefinition {
+  workflowId: string;
+  version: string;
+  name: string;
+  purpose?: string;
+  ownerAgent?: string;
+  trigger?: string;
+  requiredContext?: string;
+  preconditions?: string;
+  steps?: string;
+  decisionRules?: string;
+  approvalGates?: string;
+  writeBack?: string;
+  kpis?: string;
+  definitionOfDone?: string;
+  nextWorkflows: string[];
+  active: boolean;
+  url?: string;
+}
+
+export interface WorkflowRun {
+  runId: string;
+  artistId: string;
+  workflowId: string;
+  workflowVersion: string;
+  relatedObject?: string;
+  state: WorkflowState;
+  currentStep?: string;
+  trigger: string;
+  contextSnapshot?: string;
+  approvalState: ApprovalState;
+  blockedReason?: string;
+  nextAction?: string;
+  result?: string;
+  startedAt: string;
+  updatedAt: string;
+  url?: string;
+}
+
+export interface StartWorkflowInput {
+  artistId: string;
+  workflowId: string;
+  trigger: string;
+  relatedObject?: string;
+  contextSnapshot?: string;
+}
+
+export interface AdvanceWorkflowInput {
+  artistId: string;
+  runId: string;
+  state?: WorkflowState;
+  currentStep?: string;
+  approvalState?: ApprovalState;
+  blockedReason?: string;
+  nextAction?: string;
+  result?: string;
+}
