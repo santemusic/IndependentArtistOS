@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   AgentRunInput,
   ApprovalRequest,
@@ -8,6 +9,10 @@ import type {
   ProjectRecord,
   TaskRecord,
   UpdateTaskInput,
+  WorkflowDefinition,
+  WorkflowRun,
+  StartWorkflowInput,
+  AdvanceWorkflowInput,
 } from "../domain.js";
 import { getRuntimeControl } from "../governance.js";
 import type { MusicOsAdapter } from "./adapter.js";
@@ -20,6 +25,8 @@ export interface NotionAdapterConfig {
   projectsDatabaseId?: string;
   tasksDatabaseId?: string;
   automationRunsDatabaseId?: string;
+  workflowRegistryDatabaseId?: string;
+  workflowRunsDatabaseId?: string;
 }
 
 const NOTION_VERSION = "2022-06-28";
@@ -34,6 +41,12 @@ function plainText(value: unknown): string | undefined {
   if (!Array.isArray(value)) return undefined;
   const text = value.map((v: any) => v?.plain_text ?? v?.text?.content ?? "").join("").trim();
   return text || undefined;
+}
+
+function propertyCheckbox(page: NotionPage, name: string): boolean | undefined {
+  const p: any = page.properties?.[name];
+  if (!p || p.type !== "checkbox") return undefined;
+  return Boolean(p.checkbox);
 }
 
 function propertyText(page: NotionPage, name: string): string | undefined {
@@ -53,6 +66,8 @@ export class NotionAdapter implements MusicOsAdapter {
   private projectsDb?: string;
   private tasksDb?: string;
   private runsDb?: string;
+  private workflowRegistryDb?: string;
+  private workflowRunsDb?: string;
   private resourcesResolved = false;
 
   constructor(config: NotionAdapterConfig = {}) {
@@ -61,7 +76,18 @@ export class NotionAdapter implements MusicOsAdapter {
     this.projectsDb = config.projectsDatabaseId ?? process.env.MUSIC_OS_PROJECTS_DATABASE_ID;
     this.tasksDb = config.tasksDatabaseId ?? process.env.MUSIC_OS_TASKS_DATABASE_ID;
     this.runsDb = config.automationRunsDatabaseId ?? process.env.MUSIC_OS_AUTOMATION_RUNS_DATABASE_ID;
-    this.resourcesResolved = Boolean(this.artistContextPageId && this.projectsDb && this.tasksDb && this.runsDb);
+    this.workflowRegistryDb =
+      config.workflowRegistryDatabaseId ?? process.env.MUSIC_OS_WORKFLOW_REGISTRY_DATABASE_ID;
+    this.workflowRunsDb =
+      config.workflowRunsDatabaseId ?? process.env.MUSIC_OS_WORKFLOW_RUNS_DATABASE_ID;
+    this.resourcesResolved = Boolean(
+      this.artistContextPageId &&
+      this.projectsDb &&
+      this.tasksDb &&
+      this.runsDb &&
+      this.workflowRegistryDb &&
+      this.workflowRunsDb
+    );
   }
 
   private titleOf(item: any): string {
@@ -109,16 +135,25 @@ export class NotionAdapter implements MusicOsAdapter {
     ]);
     this.projectsDb ??= findOne("database", ["projects", "project"]);
     this.tasksDb ??= findOne("database", ["tasks", "task"]);
-    this.runsDb ??= findOne("database", ["automation runs", "agent runs", "runs"]);
+    this.runsDb ??= findOne("database", ["automation runs", "agent runs"]);
+    this.workflowRegistryDb ??= findOne("database", ["workflow registry"]);
+    this.workflowRunsDb ??= findOne("database", ["workflow runs"]);
 
-    if (!this.artistContextPageId || !this.projectsDb || !this.tasksDb || !this.runsDb) {
+    if (
+      !this.artistContextPageId ||
+      !this.projectsDb ||
+      !this.tasksDb ||
+      !this.runsDb ||
+      !this.workflowRegistryDb ||
+      !this.workflowRunsDb
+    ) {
       const visible = normalized
         .filter((item: any) => item.title)
         .map((item: any) => `${item.object}: ${item.title}`)
         .join(", ");
       throw new Error(
         "Could not auto-discover the Music OS pages/databases in this Notion connection. " +
-          "Expected Artist Master Context/Command Center, Projects, Tasks, and Automation Runs. " +
+          "Expected Artist Master Context/Command Center, Projects, Tasks, Automation Runs, Workflow Registry, and Workflow Runs. " +
           "Visible objects: " + visible,
       );
     }
@@ -307,6 +342,140 @@ export class NotionAdapter implements MusicOsAdapter {
       approvalState: "Pending",
     });
     return { approvalId: task.id, state: "Pending", actionFingerprint: input.actionFingerprint };
+  }
+
+  private workflowFromPage(page: NotionPage): WorkflowDefinition {
+    return {
+      workflowId: propertyText(page, "Workflow ID") ?? page.id,
+      version: propertyText(page, "Version") ?? "1.0.0",
+      name: propertyText(page, "Name") ?? "Unnamed workflow",
+      purpose: propertyText(page, "Purpose"),
+      ownerAgent: propertyText(page, "Owner Agent"),
+      trigger: propertyText(page, "Trigger"),
+      requiredContext: propertyText(page, "Required Context"),
+      preconditions: propertyText(page, "Preconditions"),
+      steps: propertyText(page, "Steps"),
+      decisionRules: propertyText(page, "Decision Rules"),
+      approvalGates: propertyText(page, "Approval Gates"),
+      writeBack: propertyText(page, "Write Back"),
+      kpis: propertyText(page, "KPIs"),
+      definitionOfDone: propertyText(page, "Definition of Done"),
+      nextWorkflows: (propertyText(page, "Next Workflows") ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+      active: propertyCheckbox(page, "Active") ?? false,
+      url: page.url,
+    };
+  }
+
+  private workflowRunFromPage(page: NotionPage): WorkflowRun {
+    return {
+      runId: propertyText(page, "Run ID") ?? page.id,
+      artistId: propertyText(page, "Artist ID") ?? "default",
+      workflowId: propertyText(page, "Workflow ID") ?? "",
+      workflowVersion: propertyText(page, "Workflow Version") ?? "1.0.0",
+      relatedObject: propertyText(page, "Related Object"),
+      state: (propertyText(page, "State") ?? "NOT_STARTED") as WorkflowRun["state"],
+      currentStep: propertyText(page, "Current Step"),
+      trigger: propertyText(page, "Trigger") ?? "",
+      contextSnapshot: propertyText(page, "Context Snapshot"),
+      approvalState: (propertyText(page, "Approval State") ?? "Not Required") as WorkflowRun["approvalState"],
+      blockedReason: propertyText(page, "Blocked Reason"),
+      nextAction: propertyText(page, "Next Action"),
+      result: propertyText(page, "Result"),
+      startedAt: propertyText(page, "Started At") ?? new Date().toISOString(),
+      updatedAt: propertyText(page, "Updated At") ?? new Date().toISOString(),
+      url: page.url,
+    };
+  }
+
+  async getWorkflow(workflowId: string): Promise<WorkflowDefinition> {
+    await this.resolveResources();
+    const pages = await this.queryDatabase(this.workflowRegistryDb!, {
+      page_size: 10,
+      filter: { property: "Workflow ID", title: { equals: workflowId } },
+    });
+    const page = pages.find((candidate) => propertyText(candidate, "Workflow ID") === workflowId);
+    if (!page) throw new Error("Workflow not found: " + workflowId);
+    const workflow = this.workflowFromPage(page);
+    if (!workflow.active) throw new Error("Workflow is inactive: " + workflowId);
+    return workflow;
+  }
+
+  async listWorkflows(): Promise<WorkflowDefinition[]> {
+    await this.resolveResources();
+    const pages = await this.queryDatabase(this.workflowRegistryDb!, {
+      page_size: 100,
+      filter: { property: "Active", checkbox: { equals: true } },
+    });
+    return pages.map((page) => this.workflowFromPage(page));
+  }
+
+  async startWorkflow(input: StartWorkflowInput): Promise<WorkflowRun> {
+    await this.resolveResources();
+    const workflow = await this.getWorkflow(input.workflowId);
+    const now = new Date().toISOString();
+    const runId = randomUUID();
+    const properties: Record<string, unknown> = {
+      "Run ID": { title: [{ text: { content: runId } }] },
+      "Artist ID": { rich_text: [{ text: { content: input.artistId } }] },
+      "Workflow ID": { rich_text: [{ text: { content: workflow.workflowId } }] },
+      "Workflow Version": { rich_text: [{ text: { content: workflow.version } }] },
+      State: { select: { name: "CONTEXT_CHECK" } },
+      Trigger: { rich_text: [{ text: { content: input.trigger } }] },
+      "Approval State": { select: { name: "Not Required" } },
+      "Next Action": { rich_text: [{ text: { content: "Validate required context and preconditions." } }] },
+      "Started At": { date: { start: now } },
+      "Updated At": { date: { start: now } },
+    };
+    if (input.relatedObject) properties["Related Object"] = { rich_text: [{ text: { content: input.relatedObject } }] };
+    if (input.contextSnapshot) properties["Context Snapshot"] = { rich_text: [{ text: { content: input.contextSnapshot.slice(0, 1900) } }] };
+
+    const page = await this.request("/pages", {
+      method: "POST",
+      body: JSON.stringify({ parent: { database_id: this.workflowRunsDb }, properties }),
+    });
+    return this.workflowRunFromPage(page);
+  }
+
+  async getWorkflowRun(runId: string): Promise<WorkflowRun> {
+    await this.resolveResources();
+    const pages = await this.queryDatabase(this.workflowRunsDb!, {
+      page_size: 10,
+      filter: { property: "Run ID", title: { equals: runId } },
+    });
+    const page = pages.find((candidate) => propertyText(candidate, "Run ID") === runId);
+    if (!page) throw new Error("Workflow run not found: " + runId);
+    return this.workflowRunFromPage(page);
+  }
+
+  async advanceWorkflow(input: AdvanceWorkflowInput): Promise<WorkflowRun> {
+    await this.resolveResources();
+    const pages = await this.queryDatabase(this.workflowRunsDb!, {
+      page_size: 10,
+      filter: { property: "Run ID", title: { equals: input.runId } },
+    });
+    const page = pages.find((candidate) => propertyText(candidate, "Run ID") === input.runId);
+    if (!page) throw new Error("Workflow run not found: " + input.runId);
+    const existing = this.workflowRunFromPage(page);
+    if (existing.artistId !== input.artistId) throw new Error("Workflow run belongs to a different artist.");
+
+    const properties: Record<string, unknown> = {
+      "Updated At": { date: { start: new Date().toISOString() } },
+    };
+    if (input.state) properties.State = { select: { name: input.state } };
+    if (input.currentStep !== undefined) properties["Current Step"] = { rich_text: [{ text: { content: input.currentStep } }] };
+    if (input.approvalState) properties["Approval State"] = { select: { name: input.approvalState } };
+    if (input.blockedReason !== undefined) properties["Blocked Reason"] = { rich_text: [{ text: { content: input.blockedReason } }] };
+    if (input.nextAction !== undefined) properties["Next Action"] = { rich_text: [{ text: { content: input.nextAction } }] };
+    if (input.result !== undefined) properties.Result = { rich_text: [{ text: { content: input.result.slice(0, 1900) } }] };
+
+    const updated = await this.request("/pages/" + page.id, {
+      method: "PATCH",
+      body: JSON.stringify({ properties }),
+    });
+    return this.workflowRunFromPage(updated);
   }
 
   async logAgentRun(input: AgentRunInput): Promise<{ runId: string; url?: string }> {
