@@ -922,4 +922,8 @@ const httpServer = createServer(async (req, res) => {
 
 httpServer.listen(port, () => {
   console.log(`Independent Artist OS MCP listening on http://localhost:${port}${MCP_PATH}`);
+  console.log("OAuth config status", {
+    notionClientId: Boolean(process.env.NOTION_OAUTH_CLIENT_ID),
+    notionClientSecret: Boolean(process.env.NOTION_OAUTH_CLIENT_SECRET),
+  });
 });
