@@ -388,6 +388,120 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     },
   );
 
+
+  server.tool(
+    "get_workflow",
+    "Read one active Master Workflow definition by workflow ID.",
+    {
+      workflowId: z.string().regex(/^MW-\\d{2}$/),
+    },
+    async ({ workflowId }) => asText(await adapter.getWorkflow(workflowId)),
+  );
+
+  server.tool(
+    "route_workflow",
+    "Route a plain-language management intent to the most relevant active Master Workflow. This returns a recommendation only and does not start execution.",
+    {
+      intent: z.string().min(1),
+    },
+    async ({ intent }) => {
+      const workflows = await adapter.listWorkflows();
+      const normalized = intent.toLowerCase();
+      const keywordMap: Array<[string[], string]> = [
+        [["onboard", "new artist", "activation"], "MW-01"],
+        [["this week", "weekly", "help me grow", "priorit"], "MW-02"],
+        [["90 day", "90-day", "quarter", "strategy cycle"], "MW-03"],
+        [["demo", "catalog", "music pipeline", "which track"], "MW-04"],
+        [["release ready", "release readiness", "can i release", "release setup"], "MW-05"],
+        [["dj promo", "radio promo", "promote my track", "tastemaker", "send track"], "MW-06"],
+        [["release campaign", "campaign my release"], "MW-07"],
+        [["content", "reel", "video", "post", "asset"], "MW-08"],
+        [["growth test", "experiment", "ads", "acquisition"], "MW-09"],
+        [["fan crm", "fan capture", "newsletter", "owned audience"], "MW-10"],
+        [["booking outreach", "more shows", "bookings", "promoter", "venue"], "MW-11"],
+        [["booking inquiry", "offer", "booking request"], "MW-12"],
+        [["advance show", "advancing", "hotel", "rider", "travel"], "MW-13"],
+        [["relationship", "crm follow up", "industry crm"], "MW-14"],
+        [["label outreach", "publisher", "brand outreach", "industry outreach"], "MW-15"],
+        [["revenue", "monetization", "income"], "MW-16"],
+        [["finance", "cash", "receivable", "budget review"], "MW-17"],
+        [["rights", "splits", "publishing", "ownership", "agreement"], "MW-18"],
+        [["performance", "postmortem", "how did", "learning"], "MW-19"],
+        [["hygiene", "data quality", "stale", "duplicate", "what is wrong"], "MW-20"],
+      ];
+      const match = keywordMap.find(([keywords]) => keywords.some((keyword) => normalized.includes(keyword)));
+      const selected = match
+        ? workflows.find((workflow) => workflow.workflowId === match[1])
+        : workflows.find((workflow) => workflow.workflowId === "MW-02");
+      if (!selected) throw new Error("No active workflow available for routing.");
+      return asText({
+        workflowId: selected.workflowId,
+        name: selected.name,
+        reason: match ? "Matched management intent to workflow trigger." : "Defaulted to Weekly Artist Management for diagnosis and routing.",
+      });
+    },
+  );
+
+  server.tool(
+    "start_workflow",
+    "Start a persistent Master Workflow run for the current artist. Creates runtime state in Workflow Runs; it does not perform external actions.",
+    {
+      workflowId: z.string().regex(/^MW-\\d{2}$/),
+      trigger: z.string().min(1),
+      relatedObject: z.string().optional(),
+      contextSnapshot: z.string().optional(),
+    },
+    async (input) => {
+      assertInternalWriteAllowed();
+      const snapshot = input.contextSnapshot ?? JSON.stringify(await adapter.getOperatingSnapshot(currentArtistId()));
+      return asText(
+        await adapter.startWorkflow({
+          artistId: currentArtistId(),
+          ...input,
+          contextSnapshot: snapshot,
+        }),
+      );
+    },
+  );
+
+  server.tool(
+    "get_workflow_run",
+    "Read the current state of a persistent Master Workflow run.",
+    {
+      runId: z.string().min(1),
+    },
+    async ({ runId }) => asText(await adapter.getWorkflowRun(runId)),
+  );
+
+  server.tool(
+    "advance_workflow",
+    "Advance or update a persistent Master Workflow run. This changes only internal workflow state; external actions still require the normal approval tools.",
+    {
+      runId: z.string().min(1),
+      state: z.enum([
+        "NOT_STARTED",
+        "CONTEXT_CHECK",
+        "READY",
+        "RUNNING",
+        "WAITING_FOR_DATA",
+        "WAITING_FOR_APPROVAL",
+        "EXECUTING",
+        "MEASURING",
+        "COMPLETED",
+        "BLOCKED",
+      ]).optional(),
+      currentStep: z.string().optional(),
+      approvalState: z.enum(["Not Required", "Pending", "Approved", "Rejected"]).optional(),
+      blockedReason: z.string().optional(),
+      nextAction: z.string().optional(),
+      result: z.string().optional(),
+    },
+    async (input) => {
+      assertInternalWriteAllowed();
+      return asText(await adapter.advanceWorkflow({ artistId: currentArtistId(), ...input }));
+    },
+  );
+
   server.tool(
     "get_runtime_control",
     "Read current runtime mode and external-action policy.",
