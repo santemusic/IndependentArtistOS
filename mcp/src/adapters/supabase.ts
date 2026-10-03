@@ -138,7 +138,7 @@ function first<T>(value: T | T[]): T {
 
 export class SupabaseAdapter {
   private readonly baseUrl = requiredEnv("SUPABASE_URL");
-  private readonly anonKey = requiredEnv("SUPABASE_ANON_KEY");
+  private readonly anonKey = process.env.SUPABASE_ANON_KEY?.trim() || null;
 
   constructor(private readonly connection: SupabaseConnection) {}
 
@@ -158,7 +158,7 @@ export class SupabaseAdapter {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
-        apikey: this.anonKey,
+        apikey: this.anonKey || this.connection.accessToken,
         Authorization: `Bearer ${this.connection.accessToken}`,
         "Content-Type": "application/json",
         Accept: "application/json",
