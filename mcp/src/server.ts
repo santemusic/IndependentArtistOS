@@ -466,13 +466,14 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
 
 
   if (!isSupabase) {
-  server.tool(
+    const notionAdapter = adapter as NotionAdapter;
+    server.tool(
     "get_workflow",
     "Read one active Master Workflow definition by workflow ID.",
     {
       workflowId: z.string().regex(/^MW-\\d{2}$/),
     },
-    async ({ workflowId }) => asText(await adapter.getWorkflow(workflowId)),
+    async ({ workflowId }) => asText(await notionAdapter.getWorkflow(workflowId)),
   );
 
     server.tool(
@@ -482,7 +483,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
       intent: z.string().min(1),
     },
     async ({ intent }) => {
-      const workflows = await adapter.listWorkflows();
+      const workflows = await notionAdapter.listWorkflows();
       const normalized = intent.toLowerCase();
       const keywordMap: Array<[string[], string]> = [
         [["onboard", "new artist", "activation"], "MW-01"],
@@ -530,9 +531,9 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     },
     async (input) => {
       assertInternalWriteAllowed();
-      const snapshot = input.contextSnapshot ?? JSON.stringify(await adapter.getOperatingSnapshot(currentArtistId()));
+      const snapshot = input.contextSnapshot ?? JSON.stringify(await notionAdapter.getOperatingSnapshot(currentArtistId()));
       return asText(
-        await adapter.startWorkflow({
+        await notionAdapter.startWorkflow({
           artistId: currentArtistId(),
           ...input,
           contextSnapshot: snapshot,
@@ -547,7 +548,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     {
       runId: z.string().min(1),
     },
-    async ({ runId }) => asText(await adapter.getWorkflowRun(runId)),
+    async ({ runId }) => asText(await notionAdapter.getWorkflowRun(runId)),
   );
 
     server.tool(
@@ -575,7 +576,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     },
     async (input) => {
       assertInternalWriteAllowed();
-      return asText(await adapter.advanceWorkflow({ artistId: currentArtistId(), ...input }));
+      return asText(await notionAdapter.advanceWorkflow({ artistId: currentArtistId(), ...input }));
     },
   );
 
