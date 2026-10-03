@@ -158,7 +158,7 @@ export class SupabaseAdapter {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
-        apikey: this.anonKey || this.connection.accessToken,
+        apikey: this.connection.accessToken,
         Authorization: `Bearer ${this.connection.accessToken}`,
         "Content-Type": "application/json",
         Accept: "application/json",
