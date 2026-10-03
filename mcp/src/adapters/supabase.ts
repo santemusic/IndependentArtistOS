@@ -105,7 +105,13 @@ export class SupabaseAdapter {
 
   async getArtistContext(artistId = this.workspaceId): Promise<ArtistContext> {
     this.ensureWorkspace(artistId);
-    return await this.gateway<ArtistContext>("get_artist_context");
+    const context: any = await this.gateway<any>("get_artist_context");
+    if (context?.nextImportantDate && typeof context.nextImportantDate === "object") {
+      const date = context.nextImportantDate.date ?? "";
+      const label = context.nextImportantDate.label ?? "";
+      context.nextImportantDate = [date, label].filter(Boolean).join(" — ");
+    }
+    return context as ArtistContext;
   }
 
   async listTasks(artistId = this.workspaceId, includeDone = false): Promise<TaskRecord[]> {
