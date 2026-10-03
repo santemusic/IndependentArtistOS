@@ -356,7 +356,12 @@ export class SupabaseAdapter {
       await this.rpc<any>("mcp_log_automation_run", {
         _ws: workspaceId,
         _automation_key: input.sourceAgent || "chatgpt",
-        _status: input.state,
+        _status:
+          input.state === "Started" ? "running" :
+          input.state === "Succeeded" ? "succeeded" :
+          input.state === "Failed" ? "failed" :
+          input.state === "Aborted" ? "cancelled" :
+          "queued",
         _input: {
           run_id: input.runId,
           trigger: input.trigger,
