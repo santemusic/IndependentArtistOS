@@ -161,7 +161,7 @@ function notionRedirectUri(): string {
 }
 
 function supabaseOauthConfigured(): boolean {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && process.env.ARTIST_OS_APP_URL);
+  return Boolean(process.env.SUPABASE_URL && process.env.ARTIST_OS_APP_URL);
 }
 
 function artistOsAppUrl(): string {
@@ -170,61 +170,24 @@ function artistOsAppUrl(): string {
   return value.replace(/\/$/, "");
 }
 
-async function validateSupabaseConnection(
-  accessToken: string,
-  refreshToken: string,
-  workspaceId: string,
-): Promise<SupabaseConnection> {
+async function redeemArtistOsTicket(ticket: string, state: string): Promise<SupabaseConnection> {
   const base = (process.env.SUPABASE_URL ?? "").replace(/\/$/, "");
   if (!base) throw new Error("Supabase OAuth bridge is not configured.");
-
-  const userResponse = await fetch(`${base}/auth/v1/user`, {
-    headers: { apikey: SUPABASE_PUBLIC_ANON_KEY, Authorization: `Bearer ${accessToken}` },
-  });
-  if (!userResponse.ok) throw new Error("Supabase session is invalid or expired.");
-  const user: any = await userResponse.json();
-  if (!user?.id) throw new Error("Supabase user response is incomplete.");
-
-  const membershipUrl = new URL(`${base}/rest/v1/artist_memberships`);
-  membershipUrl.searchParams.set("select", "role");
-  membershipUrl.searchParams.set("artist_workspace_id", `eq.${workspaceId}`);
-  membershipUrl.searchParams.set("user_id", `eq.${user.id}`);
-  membershipUrl.searchParams.set("limit", "1");
-  const membershipResponse = await fetch(membershipUrl, {
-    headers: {
-      apikey: SUPABASE_PUBLIC_ANON_KEY,
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json",
-    },
-  });
-  if (!membershipResponse.ok) throw new Error("Could not verify Artist OS workspace membership.");
-  const memberships: any[] = await membershipResponse.json();
-  if (!memberships.length) throw new Error("You are not a member of the selected Artist OS workspace.");
-
-  return {
-    accessToken,
-    refreshToken,
-    userId: user.id,
-    workspaceId,
-    role: memberships[0]?.role,
-    email: user.email,
-  };
-}
-
-async function refreshSupabaseConnection(connection: SupabaseConnection): Promise<SupabaseConnection> {
-  if (!connection.refreshToken) return connection;
-  const base = (process.env.SUPABASE_URL ?? "").replace(/\/$/, "");
-  const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
+  const response = await fetch(`${base}/functions/v1/mcp-connection-ticket`, {
     method: "POST",
-    headers: { apikey: SUPABASE_PUBLIC_ANON_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: connection.refreshToken }),
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ action: "redeem", ticket, state }),
   });
-  if (!response.ok) throw new Error("Could not refresh the Artist OS session.");
-  const body: any = await response.json();
+  const body: any = await response.json().catch(() => ({}));
+  if (!response.ok || !body?.connection_token || !body?.workspace_id || !body?.user_id) {
+    throw new Error("Artist OS connection ticket is invalid or expired.");
+  }
   return {
-    ...connection,
-    accessToken: body.access_token ?? connection.accessToken,
-    refreshToken: body.refresh_token ?? connection.refreshToken,
+    connectionToken: body.connection_token,
+    userId: body.user_id,
+    workspaceId: body.workspace_id,
+    role: body.role,
+    connectionExpiresAt: body.connection_expires_at,
   };
 }
 
@@ -293,7 +256,7 @@ function authorizationPage(params: URLSearchParams, error?: string): string {
 
 function createMusicOsServer(authPayload: Record<string, any> = {}) {
   const connection = decryptConnection(authPayload.conn);
-  const isSupabase = connection?.provider === "supabase";
+  const isSupabase = connection?.provider === "supabase_gateway";
   const adapter = isSupabase
     ? new SupabaseAdapter(connection as SupabaseConnection)
     : connection?.token
@@ -905,18 +868,16 @@ const httpServer = createServer(async (req, res) => {
     try {
       const body = new URLSearchParams(await readBody(req));
       const state = body.get("state") ?? "";
-      const accessToken = body.get("access_token") ?? "";
-      const refreshToken = body.get("refresh_token") ?? "";
-      const workspaceId = body.get("workspace_id") ?? "";
+      const ticket = body.get("ticket") ?? "";
       const statePayload = verifySignedPayload(state);
       const request = statePayload?.kind === "supabase_state" ? statePayload.request : null;
-      if (!request || typeof request !== "object" || !accessToken || !refreshToken || !workspaceId || !supabaseOauthConfigured()) {
+      if (!request || typeof request !== "object" || !ticket || !supabaseOauthConfigured()) {
         res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
         res.end("Invalid Artist OS connection callback.");
         return;
       }
 
-      const connection = await validateSupabaseConnection(accessToken, refreshToken, workspaceId);
+      const connection = await redeemArtistOsTicket(ticket, state);
       const params = new URLSearchParams(
         Object.entries(request).map(([key, value]) => [key, String(value ?? "")]),
       );
@@ -940,7 +901,7 @@ const httpServer = createServer(async (req, res) => {
       }
 
       const now = Math.floor(Date.now() / 1000);
-      const encrypted = encryptConnection({ provider: "supabase", ...connection });
+      const encrypted = encryptConnection({ provider: "supabase_gateway", ...connection });
       const authCode = signPayload({
         kind: "auth_code",
         nonce: randomUUID(),
@@ -1183,12 +1144,7 @@ const httpServer = createServer(async (req, res) => {
         return;
       }
       const now = Math.floor(Date.now() / 1000);
-      let connectionToken = payload.conn;
-      const decoded = decryptConnection(payload.conn);
-      if (decoded?.provider === "supabase") {
-        const refreshed = await refreshSupabaseConnection(decoded as SupabaseConnection);
-        connectionToken = encryptConnection({ provider: "supabase", ...refreshed });
-      }
+      const connectionToken = payload.conn;
       const accessToken = signPayload({
         kind: "access",
         aud: resourceId,
@@ -1275,7 +1231,6 @@ httpServer.listen(port, () => {
   console.log(`Independent Artist OS MCP listening on http://localhost:${port}${MCP_PATH}`);
   console.log("OAuth config status", {
     supabaseUrl: Boolean(process.env.SUPABASE_URL),
-    supabaseAnonKey: Boolean(process.env.SUPABASE_ANON_KEY),
     artistOsAppUrl: Boolean(process.env.ARTIST_OS_APP_URL),
     notionClientId: Boolean(process.env.NOTION_OAUTH_CLIENT_ID),
     notionClientSecret: Boolean(process.env.NOTION_OAUTH_CLIENT_SECRET),
