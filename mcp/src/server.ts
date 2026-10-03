@@ -18,6 +18,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { NotionAdapter } from "./adapters/notion.js";
+import { SupabaseAdapter, type SupabaseConnection } from "./adapters/supabase.js";
 import {
   actionFingerprint,
   assertExternalActionMayBeStaged,
@@ -156,6 +157,76 @@ function notionRedirectUri(): string {
   return `${publicOrigin}/oauth/notion/callback`;
 }
 
+function supabaseOauthConfigured(): boolean {
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && process.env.ARTIST_OS_APP_URL);
+}
+
+function artistOsAppUrl(): string {
+  const value = process.env.ARTIST_OS_APP_URL;
+  if (!value) throw new Error("Missing required environment variable: ARTIST_OS_APP_URL");
+  return value.replace(/\/$/, "");
+}
+
+async function validateSupabaseConnection(
+  accessToken: string,
+  refreshToken: string,
+  workspaceId: string,
+): Promise<SupabaseConnection> {
+  const base = (process.env.SUPABASE_URL ?? "").replace(/\/$/, "");
+  const anon = process.env.SUPABASE_ANON_KEY ?? "";
+  if (!base || !anon) throw new Error("Supabase OAuth bridge is not configured.");
+
+  const userResponse = await fetch(`${base}/auth/v1/user`, {
+    headers: { apikey: anon, Authorization: `Bearer ${accessToken}` },
+  });
+  if (!userResponse.ok) throw new Error("Supabase session is invalid or expired.");
+  const user: any = await userResponse.json();
+  if (!user?.id) throw new Error("Supabase user response is incomplete.");
+
+  const membershipUrl = new URL(`${base}/rest/v1/artist_memberships`);
+  membershipUrl.searchParams.set("select", "role");
+  membershipUrl.searchParams.set("artist_workspace_id", `eq.${workspaceId}`);
+  membershipUrl.searchParams.set("user_id", `eq.${user.id}`);
+  membershipUrl.searchParams.set("limit", "1");
+  const membershipResponse = await fetch(membershipUrl, {
+    headers: {
+      apikey: anon,
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+    },
+  });
+  if (!membershipResponse.ok) throw new Error("Could not verify Artist OS workspace membership.");
+  const memberships: any[] = await membershipResponse.json();
+  if (!memberships.length) throw new Error("You are not a member of the selected Artist OS workspace.");
+
+  return {
+    accessToken,
+    refreshToken,
+    userId: user.id,
+    workspaceId,
+    role: memberships[0]?.role,
+    email: user.email,
+  };
+}
+
+async function refreshSupabaseConnection(connection: SupabaseConnection): Promise<SupabaseConnection> {
+  if (!connection.refreshToken) return connection;
+  const base = (process.env.SUPABASE_URL ?? "").replace(/\/$/, "");
+  const anon = process.env.SUPABASE_ANON_KEY ?? "";
+  const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: { apikey: anon, "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: connection.refreshToken }),
+  });
+  if (!response.ok) throw new Error("Could not refresh the Artist OS session.");
+  const body: any = await response.json();
+  return {
+    ...connection,
+    accessToken: body.access_token ?? connection.accessToken,
+    refreshToken: body.refresh_token ?? connection.refreshToken,
+  };
+}
+
 function writeJson(res: any, status: number, body: unknown, extraHeaders: Record<string, string> = {}) {
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
@@ -221,13 +292,18 @@ function authorizationPage(params: URLSearchParams, error?: string): string {
 
 function createMusicOsServer(authPayload: Record<string, any> = {}) {
   const connection = decryptConnection(authPayload.conn);
-  const adapter = connection?.token
-    ? new NotionAdapter({ token: connection.token })
-    : new NotionAdapter();
+  const isSupabase = connection?.provider === "supabase";
+  const adapter = isSupabase
+    ? new SupabaseAdapter(connection as SupabaseConnection)
+    : connection?.token
+      ? new NotionAdapter({ token: connection.token })
+      : new NotionAdapter();
   const currentArtistId = () =>
-    (typeof authPayload.sub === "string" && authPayload.sub) ||
-    process.env.MUSIC_OS_ARTIST_ID ||
-    "default";
+    isSupabase
+      ? String(connection?.workspaceId ?? "")
+      : (typeof authPayload.sub === "string" && authPayload.sub) ||
+        process.env.MUSIC_OS_ARTIST_ID ||
+        "default";
   const server = new McpServer({
     name: "independent-artist-os",
     version: "0.3.0",
@@ -389,6 +465,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
   );
 
 
+  if (!isSupabase) {
   server.tool(
     "get_workflow",
     "Read one active Master Workflow definition by workflow ID.",
@@ -398,7 +475,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     async ({ workflowId }) => asText(await adapter.getWorkflow(workflowId)),
   );
 
-  server.tool(
+    server.tool(
     "route_workflow",
     "Route a plain-language management intent to the most relevant active Master Workflow. This returns a recommendation only and does not start execution.",
     {
@@ -442,7 +519,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     },
   );
 
-  server.tool(
+    server.tool(
     "start_workflow",
     "Start a persistent Master Workflow run for the current artist. Creates runtime state in Workflow Runs; it does not perform external actions.",
     {
@@ -464,7 +541,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     },
   );
 
-  server.tool(
+    server.tool(
     "get_workflow_run",
     "Read the current state of a persistent Master Workflow run.",
     {
@@ -473,7 +550,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     async ({ runId }) => asText(await adapter.getWorkflowRun(runId)),
   );
 
-  server.tool(
+    server.tool(
     "advance_workflow",
     "Advance or update a persistent Master Workflow run. This changes only internal workflow state; external actions still require the normal approval tools.",
     {
@@ -501,6 +578,190 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
       return asText(await adapter.advanceWorkflow({ artistId: currentArtistId(), ...input }));
     },
   );
+
+  }
+
+  if (isSupabase) {
+    const supabase = adapter as SupabaseAdapter;
+
+    server.tool(
+      "get_recent_changes",
+      "Read incremental Second Brain changes after a workspace version cursor.",
+      {
+        afterVersion: z.number().int().nonnegative().default(0),
+        limit: z.number().int().min(1).max(200).default(50),
+      },
+      async ({ afterVersion, limit }) => asText(await supabase.getRecentChanges(afterVersion, limit)),
+    );
+
+    server.tool(
+      "list_tasks",
+      "List tasks for the connected Artist OS workspace.",
+      {
+        includeDone: z.boolean().default(false),
+      },
+      async ({ includeDone }) => asText(await supabase.listTasks(currentArtistId(), includeDone)),
+    );
+
+    server.tool(
+      "search_contacts",
+      "Search the connected Artist OS CRM by name, email, city or country.",
+      {
+        query: z.string().default(""),
+        limit: z.number().int().min(1).max(100).default(25),
+      },
+      async ({ query, limit }) => asText(await supabase.searchContacts(query, limit)),
+    );
+
+    server.tool(
+      "get_contact",
+      "Read one CRM contact with roles, organizations and recent interactions.",
+      {
+        contactId: z.string().uuid(),
+      },
+      async ({ contactId }) => asText(await supabase.getContact(contactId)),
+    );
+
+    server.tool(
+      "create_contact",
+      "Create a CRM contact in the connected Artist OS workspace. This is an internal Second Brain write only.",
+      {
+        display_name: z.string().min(1),
+        first_name: z.string().optional(),
+        last_name: z.string().optional(),
+        email_primary: z.string().email().optional(),
+        email_secondary: z.string().email().optional(),
+        phone_primary: z.string().optional(),
+        phone_secondary: z.string().optional(),
+        city: z.string().optional(),
+        region: z.string().optional(),
+        country: z.string().optional(),
+        language: z.string().optional(),
+        instagram_or_social: z.string().optional(),
+        website: z.string().optional(),
+        preferred_channel: z.string().optional(),
+        notes: z.string().optional(),
+        source_reference: z.string().max(200).optional(),
+        last_contact_at: z.string().optional(),
+        next_follow_up_at: z.string().optional(),
+      },
+      async (input) => {
+        assertInternalWriteAllowed();
+        return asText(await supabase.createContact(input));
+      },
+    );
+
+    server.tool(
+      "update_contact",
+      "Update safe CRM fields for an existing contact in the connected workspace.",
+      {
+        contactId: z.string().uuid(),
+        display_name: z.string().min(1).optional(),
+        first_name: z.string().optional(),
+        last_name: z.string().optional(),
+        email_primary: z.string().email().nullable().optional(),
+        email_secondary: z.string().email().nullable().optional(),
+        phone_primary: z.string().nullable().optional(),
+        phone_secondary: z.string().nullable().optional(),
+        city: z.string().nullable().optional(),
+        region: z.string().nullable().optional(),
+        country: z.string().nullable().optional(),
+        language: z.string().nullable().optional(),
+        instagram_or_social: z.string().nullable().optional(),
+        website: z.string().nullable().optional(),
+        preferred_channel: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+        last_contact_at: z.string().nullable().optional(),
+        next_follow_up_at: z.string().nullable().optional(),
+        archived_at: z.string().nullable().optional(),
+      },
+      async ({ contactId, ...payload }) => {
+        assertInternalWriteAllowed();
+        return asText(await supabase.updateContact(contactId, payload));
+      },
+    );
+
+    server.tool(
+      "log_interaction",
+      "Log an internal CRM interaction and optional next action. This does not send a message.",
+      {
+        contact_id: z.string().uuid().optional(),
+        organization_id: z.string().uuid().optional(),
+        interaction_type: z.enum(["email","dm","call","meeting","show","feedback","support","note","other"]).default("note"),
+        occurred_at: z.string().optional(),
+        summary: z.string().min(1),
+        outcome: z.string().optional(),
+        next_action: z.string().optional(),
+        next_action_due_at: z.string().optional(),
+        project_id: z.string().uuid().optional(),
+        task_id: z.string().uuid().optional(),
+        source_reference: z.string().max(200).optional(),
+      },
+      async (input) => {
+        assertInternalWriteAllowed();
+        return asText(await supabase.logInteraction(input));
+      },
+    );
+
+    server.tool(
+      "search_opportunities",
+      "Search CRM opportunities for the connected Artist OS workspace.",
+      {
+        query: z.string().default(""),
+        status: z.string().default("open"),
+        limit: z.number().int().min(1).max(100).default(25),
+      },
+      async ({ query, status, limit }) => asText(await supabase.searchOpportunities(query, status, limit)),
+    );
+
+    server.tool(
+      "create_opportunity",
+      "Create an internal CRM opportunity. This never performs the external opportunity action.",
+      {
+        opportunity_type: z.enum(["booking","pr","radio","dj_support","collaboration","brand","label","sync","press","other"]),
+        title: z.string().min(1),
+        contact_id: z.string().uuid().optional(),
+        organization_id: z.string().uuid().optional(),
+        stage: z.string().optional(),
+        status: z.enum(["open","won","lost","on_hold"]).optional(),
+        priority: z.enum(["A","B","C","Unscored"]).optional(),
+        market_city: z.string().optional(),
+        market_country: z.string().optional(),
+        value_amount: z.number().optional(),
+        value_currency: z.string().optional(),
+        date_window_start: z.string().optional(),
+        date_window_end: z.string().optional(),
+        next_action: z.string().optional(),
+        next_action_due_at: z.string().optional(),
+        project_id: z.string().uuid().optional(),
+        notes: z.string().optional(),
+        source_reference: z.string().max(200).optional(),
+      },
+      async (input) => {
+        assertInternalWriteAllowed();
+        return asText(await supabase.createOpportunity(input));
+      },
+    );
+
+    server.tool(
+      "update_weekly_priorities",
+      "Replace the connected artist's weekly top priorities (maximum three).",
+      {
+        priorities: z.array(z.string().min(1)).max(3),
+      },
+      async ({ priorities }) => {
+        assertInternalWriteAllowed();
+        return asText(await supabase.updateWeeklyPriorities(priorities));
+      },
+    );
+
+    server.tool(
+      "get_discovery_status",
+      "Read discovery/onboarding completion counts for the connected artist.",
+      {},
+      async () => asText(await supabase.getDiscoveryStatus()),
+    );
+  }
 
   server.tool(
     "get_runtime_control",
@@ -596,6 +857,21 @@ const httpServer = createServer(async (req, res) => {
       return;
     }
 
+    if (supabaseOauthConfigured()) {
+      const now = Math.floor(Date.now() / 1000);
+      const state = signPayload({
+        kind: "supabase_state",
+        request: Object.fromEntries(url.searchParams.entries()),
+        iat: now,
+        exp: now + 600,
+      });
+      const target = new URL(artistOsAppUrl() + "/mcp-connect");
+      target.searchParams.set("state", state);
+      res.writeHead(302, { location: target.toString(), "cache-control": "no-store" });
+      res.end();
+      return;
+    }
+
     if (notionOauthConfigured()) {
       const now = Math.floor(Date.now() / 1000);
       const state = signPayload({
@@ -620,6 +896,73 @@ const httpServer = createServer(async (req, res) => {
       "cache-control": "no-store",
     });
     res.end(authorizationPage(url.searchParams));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/oauth/supabase/callback") {
+    try {
+      const body = new URLSearchParams(await readBody(req));
+      const state = body.get("state") ?? "";
+      const accessToken = body.get("access_token") ?? "";
+      const refreshToken = body.get("refresh_token") ?? "";
+      const workspaceId = body.get("workspace_id") ?? "";
+      const statePayload = verifySignedPayload(state);
+      const request = statePayload?.kind === "supabase_state" ? statePayload.request : null;
+      if (!request || typeof request !== "object" || !accessToken || !refreshToken || !workspaceId || !supabaseOauthConfigured()) {
+        res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+        res.end("Invalid Artist OS connection callback.");
+        return;
+      }
+
+      const connection = await validateSupabaseConnection(accessToken, refreshToken, workspaceId);
+      const params = new URLSearchParams(
+        Object.entries(request).map(([key, value]) => [key, String(value ?? "")]),
+      );
+      const clientId = params.get("client_id") ?? "";
+      const redirectUri = params.get("redirect_uri") ?? "";
+      const codeChallenge = params.get("code_challenge") ?? "";
+      const stateBack = params.get("state") ?? "";
+      const scope = params.get("scope") ?? "artist_os:read artist_os:write";
+      const resource = params.get("resource") ?? "";
+      if (
+        params.get("response_type") !== "code" ||
+        params.get("code_challenge_method") !== "S256" ||
+        !codeChallenge ||
+        !verifyClientId(clientId, redirectUri) ||
+        !isTrustedRedirectUri(redirectUri) ||
+        resource !== resourceId
+      ) {
+        res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+        res.end("Invalid original ChatGPT OAuth request.");
+        return;
+      }
+
+      const now = Math.floor(Date.now() / 1000);
+      const encrypted = encryptConnection({ provider: "supabase", ...connection });
+      const authCode = signPayload({
+        kind: "auth_code",
+        nonce: randomUUID(),
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        code_challenge: codeChallenge,
+        resource,
+        scope,
+        sub: connection.userId,
+        conn: encrypted,
+        iat: now,
+        exp: now + 300,
+      });
+
+      const target = new URL(redirectUri);
+      target.searchParams.set("code", authCode);
+      if (stateBack) target.searchParams.set("state", stateBack);
+      res.writeHead(302, { location: target.toString(), "cache-control": "no-store" });
+      res.end();
+    } catch (error) {
+      console.error("Artist OS connection callback failed:", error);
+      res.writeHead(401, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Could not connect this Artist OS workspace.");
+    }
     return;
   }
 
@@ -838,12 +1181,18 @@ const httpServer = createServer(async (req, res) => {
         return;
       }
       const now = Math.floor(Date.now() / 1000);
+      let connectionToken = payload.conn;
+      const decoded = decryptConnection(payload.conn);
+      if (decoded?.provider === "supabase") {
+        const refreshed = await refreshSupabaseConnection(decoded as SupabaseConnection);
+        connectionToken = encryptConnection({ provider: "supabase", ...refreshed });
+      }
       const accessToken = signPayload({
         kind: "access",
         aud: resourceId,
         scope: payload.scope,
         sub: payload.sub,
-        conn: payload.conn,
+        conn: connectionToken,
         iat: now,
         exp: now + 3600,
       });
@@ -923,6 +1272,9 @@ const httpServer = createServer(async (req, res) => {
 httpServer.listen(port, () => {
   console.log(`Independent Artist OS MCP listening on http://localhost:${port}${MCP_PATH}`);
   console.log("OAuth config status", {
+    supabaseUrl: Boolean(process.env.SUPABASE_URL),
+    supabaseAnonKey: Boolean(process.env.SUPABASE_ANON_KEY),
+    artistOsAppUrl: Boolean(process.env.ARTIST_OS_APP_URL),
     notionClientId: Boolean(process.env.NOTION_OAUTH_CLIENT_ID),
     notionClientSecret: Boolean(process.env.NOTION_OAUTH_CLIENT_SECRET),
   });
