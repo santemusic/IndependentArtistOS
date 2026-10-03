@@ -30,6 +30,9 @@ const dashboardHtml = readFileSync(new URL("../public/dashboard.html", import.me
 const MCP_PATH = "/mcp";
 const port = Number(process.env.PORT ?? process.env.MUSIC_OS_PORT ?? 8787);
 const publicOrigin = (process.env.MCP_PUBLIC_URL ?? "https://independent-artist-os-mcp.onrender.com").replace(/\/$/, "");
+const SUPABASE_PUBLIC_ANON_KEY =
+  process.env.SUPABASE_ANON_KEY?.trim() ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0eHdkeG5iZm1sYWZ1bXdheGN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4ODg0MTgsImV4cCI6MjA4ODQ2NDQxOH0._ebQ9m5J6dbQCzqqFmxSFPk4AGYB1RdATCQVAPV-yXw";
 const resourceId = `${publicOrigin}${MCP_PATH}`;
 const oauthIssuer = publicOrigin;
 const usedAuthorizationCodes = new Set<string>();
@@ -176,7 +179,7 @@ async function validateSupabaseConnection(
   if (!base) throw new Error("Supabase OAuth bridge is not configured.");
 
   const userResponse = await fetch(`${base}/auth/v1/user`, {
-    headers: { apikey: accessToken, Authorization: `Bearer ${accessToken}` },
+    headers: { apikey: SUPABASE_PUBLIC_ANON_KEY, Authorization: `Bearer ${accessToken}` },
   });
   if (!userResponse.ok) throw new Error("Supabase session is invalid or expired.");
   const user: any = await userResponse.json();
@@ -189,7 +192,7 @@ async function validateSupabaseConnection(
   membershipUrl.searchParams.set("limit", "1");
   const membershipResponse = await fetch(membershipUrl, {
     headers: {
-      apikey: accessToken,
+      apikey: SUPABASE_PUBLIC_ANON_KEY,
       Authorization: `Bearer ${accessToken}`,
       Accept: "application/json",
     },
@@ -213,7 +216,7 @@ async function refreshSupabaseConnection(connection: SupabaseConnection): Promis
   const base = (process.env.SUPABASE_URL ?? "").replace(/\/$/, "");
   const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
     method: "POST",
-    headers: { apikey: connection.accessToken, "Content-Type": "application/json" },
+    headers: { apikey: SUPABASE_PUBLIC_ANON_KEY, "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: connection.refreshToken }),
   });
   if (!response.ok) throw new Error("Could not refresh the Artist OS session.");
