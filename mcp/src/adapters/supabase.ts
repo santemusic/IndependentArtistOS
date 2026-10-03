@@ -133,7 +133,12 @@ export class SupabaseAdapter {
   async getOperatingSnapshot(artistId = this.workspaceId): Promise<OperatingSnapshot> {
     this.ensureWorkspace(artistId);
     const result = await this.gateway<any>("get_operating_snapshot");
-    const artist = result.artist as ArtistContext;
+    const artist: any = result.artist ?? {};
+    if (artist?.nextImportantDate && typeof artist.nextImportantDate === "object") {
+      const date = artist.nextImportantDate.date ?? "";
+      const label = artist.nextImportantDate.label ?? "";
+      artist.nextImportantDate = [date, label].filter(Boolean).join(" — ");
+    }
     const activeProjects = (result.activeProjects ?? []).map((row: any) => ({
       id: row.id,
       name: row.name ?? "Untitled project",
