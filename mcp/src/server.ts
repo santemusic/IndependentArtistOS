@@ -173,11 +173,10 @@ async function validateSupabaseConnection(
   workspaceId: string,
 ): Promise<SupabaseConnection> {
   const base = (process.env.SUPABASE_URL ?? "").replace(/\/$/, "");
-  const anon = process.env.SUPABASE_ANON_KEY ?? "";
-  if (!base || !anon) throw new Error("Supabase OAuth bridge is not configured.");
+  if (!base) throw new Error("Supabase OAuth bridge is not configured.");
 
   const userResponse = await fetch(`${base}/auth/v1/user`, {
-    headers: { apikey: anon, Authorization: `Bearer ${accessToken}` },
+    headers: { apikey: accessToken, Authorization: `Bearer ${accessToken}` },
   });
   if (!userResponse.ok) throw new Error("Supabase session is invalid or expired.");
   const user: any = await userResponse.json();
@@ -190,7 +189,7 @@ async function validateSupabaseConnection(
   membershipUrl.searchParams.set("limit", "1");
   const membershipResponse = await fetch(membershipUrl, {
     headers: {
-      apikey: anon,
+      apikey: accessToken,
       Authorization: `Bearer ${accessToken}`,
       Accept: "application/json",
     },
@@ -212,10 +211,9 @@ async function validateSupabaseConnection(
 async function refreshSupabaseConnection(connection: SupabaseConnection): Promise<SupabaseConnection> {
   if (!connection.refreshToken) return connection;
   const base = (process.env.SUPABASE_URL ?? "").replace(/\/$/, "");
-  const anon = process.env.SUPABASE_ANON_KEY ?? "";
   const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
     method: "POST",
-    headers: { apikey: anon, "Content-Type": "application/json" },
+    headers: { apikey: connection.accessToken, "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: connection.refreshToken }),
   });
   if (!response.ok) throw new Error("Could not refresh the Artist OS session.");
