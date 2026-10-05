@@ -728,6 +728,68 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     );
   }
 
+  if (isSupabase) {
+    const supabase = adapter as SupabaseAdapter;
+
+    server.tool(
+      "get_second_brain_context",
+      "Read the normalized BYD Second Brain context for the connected artist, including positioning, facts, goals, tasks, approvals, learnings, decisions, runtime control and AI provider preference.",
+      {},
+      async () => asText(await supabase.getSecondBrainContext()),
+    );
+
+    server.tool(
+      "get_system_health",
+      "Read operational health for the connected artist workspace, including runtime state, queue counts, knowledge coverage and provider connection metadata.",
+      {},
+      async () => asText(await supabase.getSystemHealth()),
+    );
+
+    server.tool(
+      "get_positioning_summary",
+      "Read the latest AI Artist Positioning identity and strategic analysis summary for the connected artist.",
+      {},
+      async () => asText(await supabase.getPositioningSummary()),
+    );
+
+    server.tool(
+      "get_research_status",
+      "Read the latest AI Artist Positioning research run status, source counts, conflicts and missing critical input counts.",
+      {},
+      async () => asText(await supabase.getResearchStatus()),
+    );
+
+    server.tool(
+      "get_research_findings",
+      "Read source-backed AI Artist Positioning findings, optionally filtered by research domain.",
+      {
+        domain: z.string().max(40).optional(),
+      },
+      async ({ domain }) => asText(await supabase.getResearchFindings(domain)),
+    );
+
+    server.tool(
+      "get_onboarding_prefill_summary",
+      "Read AI Artist Positioning prefill coverage for the artist's active delivery package: auto-researched, AI suggestions, artist-only input and conflicts.",
+      {},
+      async () => asText(await supabase.getOnboardingPrefillSummary()),
+    );
+
+    server.tool(
+      "list_ai_agents",
+      "List active BYD AI agents and their operating domains and permissions.",
+      {},
+      async () => asText(await supabase.listAiAgents()),
+    );
+
+    server.tool(
+      "list_workflows",
+      "List active BYD workflow definitions, triggers, routing domains and approval policies.",
+      {},
+      async () => asText(await supabase.listWorkflows()),
+    );
+  }
+
   server.tool(
     "get_runtime_control",
     "Read current runtime mode and external-action policy.",
