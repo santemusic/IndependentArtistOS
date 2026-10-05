@@ -96,6 +96,29 @@ export class SupabaseAdapter {
     return body.result as T;
   }
 
+  private async directRead<T>(operation: string, input: Record<string, unknown> = {}): Promise<T> {
+    const anonKey = process.env.SUPABASE_ANON_KEY;
+    if (!anonKey) throw new Error("Missing required environment variable: SUPABASE_ANON_KEY");
+    const response = await fetch(`${this.baseUrl}/rest/v1/rpc/mcp_direct_read`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({
+        _connection_token: this.connection.connectionToken,
+        _operation: operation,
+        _input: input,
+      }),
+    });
+    const body: any = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body?.message || `Direct MCP read failed (${response.status})`);
+    if (body?.error) throw new Error(body.error);
+    return body?.result as T;
+  }
+
   private ensureWorkspace(artistId?: string): string {
     if (artistId && artistId !== this.workspaceId) {
       throw new Error("Requested artist/workspace does not match the authenticated connection.");
@@ -301,5 +324,37 @@ export class SupabaseAdapter {
 
   async revokeConnection(): Promise<{ revoked: boolean }> {
     return await this.gateway<{ revoked: boolean }>("revoke_connection");
+  }
+
+  async getSecondBrainContext(): Promise<Record<string, unknown>> {
+    return await this.directRead<Record<string, unknown>>("get_second_brain_context");
+  }
+
+  async getSystemHealth(): Promise<Record<string, unknown>> {
+    return await this.directRead<Record<string, unknown>>("get_system_health");
+  }
+
+  async getPositioningSummary(): Promise<Record<string, unknown>> {
+    return await this.directRead<Record<string, unknown>>("get_positioning_summary");
+  }
+
+  async getResearchStatus(): Promise<Record<string, unknown>> {
+    return await this.directRead<Record<string, unknown>>("get_research_status");
+  }
+
+  async getResearchFindings(domain?: string): Promise<Record<string, unknown>> {
+    return await this.directRead<Record<string, unknown>>("get_research_findings", domain ? { domain } : {});
+  }
+
+  async getOnboardingPrefillSummary(): Promise<Record<string, unknown>> {
+    return await this.directRead<Record<string, unknown>>("get_onboarding_prefill_summary");
+  }
+
+  async listAiAgents(): Promise<any[]> {
+    return await this.directRead<any[]>("list_ai_agents");
+  }
+
+  async listWorkflows(): Promise<any[]> {
+    return await this.directRead<any[]>("list_workflows");
   }
 }
