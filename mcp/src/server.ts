@@ -17,6 +17,7 @@ import {
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import OpenAI from "openai";
 import { NotionAdapter } from "./adapters/notion.js";
 import { SupabaseAdapter, type SupabaseConnection } from "./adapters/supabase.js";
 import {
@@ -44,6 +45,91 @@ function asText(value: unknown) {
     content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
   };
 }
+
+let openAiClientInstance: OpenAI | null = null;
+
+function openAiClient(): OpenAI {
+  if (!openAiClientInstance) openAiClientInstance = new OpenAI();
+  return openAiClientInstance;
+}
+
+const ceoActionSchema = z.object({
+  title: z.string().min(1),
+  why: z.string().min(1),
+  owner_type: z.enum(["ARTIST", "HUMAN", "AI_AGENT", "AGENCY"]),
+  owner_name: z.string().nullable(),
+  priority: z.enum(["HIGH", "MEDIUM", "LOW"]),
+  due_date: z.string().nullable(),
+  next_action: z.string().min(1),
+  domain: z.enum(["strategy", "music", "release", "content", "audience", "growth", "live", "revenue", "finance", "industry", "operations"]),
+  consequential: z.boolean(),
+  consequence_type: z.enum(["EMAIL", "SOCIAL_PUBLISH", "SPEND", "BOOKING_ACCEPTANCE", "CONTRACT_RIGHTS", "RELEASE_DATE_CHANGE", "PUBLIC_STATEMENT", "OTHER"]).nullable(),
+});
+
+const ceoResponseSchema = z.object({
+  current_state: z.object({
+    summary: z.string(),
+    facts_used: z.array(z.string()),
+  }),
+  diagnosis: z.object({
+    primary_bottleneck: z.string(),
+    evidence: z.array(z.string()),
+    confidence: z.number().min(0).max(1),
+  }),
+  actions: z.array(ceoActionSchema).max(3),
+  missing_data: z.array(z.string()),
+  notes: z.array(z.string()),
+});
+
+const ceoJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["current_state", "diagnosis", "actions", "missing_data", "notes"],
+  properties: {
+    current_state: {
+      type: "object",
+      additionalProperties: false,
+      required: ["summary", "facts_used"],
+      properties: {
+        summary: { type: "string" },
+        facts_used: { type: "array", items: { type: "string" } },
+      },
+    },
+    diagnosis: {
+      type: "object",
+      additionalProperties: false,
+      required: ["primary_bottleneck", "evidence", "confidence"],
+      properties: {
+        primary_bottleneck: { type: "string" },
+        evidence: { type: "array", items: { type: "string" } },
+        confidence: { type: "number", minimum: 0, maximum: 1 },
+      },
+    },
+    actions: {
+      type: "array",
+      maxItems: 3,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "why", "owner_type", "owner_name", "priority", "due_date", "next_action", "domain", "consequential", "consequence_type"],
+        properties: {
+          title: { type: "string" },
+          why: { type: "string" },
+          owner_type: { type: "string", enum: ["ARTIST", "HUMAN", "AI_AGENT", "AGENCY"] },
+          owner_name: { type: ["string", "null"] },
+          priority: { type: "string", enum: ["HIGH", "MEDIUM", "LOW"] },
+          due_date: { type: ["string", "null"] },
+          next_action: { type: "string" },
+          domain: { type: "string", enum: ["strategy", "music", "release", "content", "audience", "growth", "live", "revenue", "finance", "industry", "operations"] },
+          consequential: { type: "boolean" },
+          consequence_type: { type: ["string", "null"], enum: ["EMAIL", "SOCIAL_PUBLISH", "SPEND", "BOOKING_ACCEPTANCE", "CONTRACT_RIGHTS", "RELEASE_DATE_CHANGE", "PUBLIC_STATEMENT", "OTHER", null] },
+        },
+      },
+    },
+    missing_data: { type: "array", items: { type: "string" } },
+    notes: { type: "array", items: { type: "string" } },
+  },
+} as const;
 
 function secret(): string {
   const value = process.env.MCP_AUTH_TOKEN;
@@ -548,6 +634,162 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
 
   if (isSupabase) {
     const supabase = adapter as SupabaseAdapter;
+
+    server.tool(
+      "run_ai_ceo",
+      "Run the live BYD AI CEO against the connected artist's Second Brain. Creates only governed internal tasks and approval requests; it never executes external actions.",
+      {
+        intent: z.enum(["help_me_grow", "weekly", "review_progress", "plan_release"]).default("help_me_grow"),
+        userMessage: z.string().max(4000).optional(),
+      },
+      async ({ intent, userMessage }) => {
+        assertInternalWriteAllowed();
+
+        const context: any = await supabase.getSecondBrainContext();
+        const runtime = context?.runtime_control ?? {};
+        if (runtime?.kill_switch === true) throw new Error("BYD runtime is blocked by the kill switch.");
+        if (String(runtime?.global_mode ?? "SUPERVISED").toUpperCase() === "PAUSED") {
+          throw new Error("BYD runtime is paused.");
+        }
+
+        const runFingerprint = actionFingerprint({
+          artistId: currentArtistId(),
+          actionType: "AI_CEO",
+          summary: [intent, context?.master_context?.goal_90d ?? "", context?.master_context?.bottleneck ?? ""].join("|"),
+          relatedObject: new Date().toISOString().slice(0, 10),
+        });
+
+        const runId = randomUUID();
+        await supabase.logAgentRun({
+          artistId: currentArtistId(),
+          runId,
+          sourceAgent: "ceo-manager",
+          trigger: intent,
+          state: "Started",
+          approvalState: "Not Required",
+          actionFingerprint: runFingerprint,
+          notes: "Live BYD AI CEO run via MCP.",
+        });
+
+        const systemRules = [
+          "Use the artist's current operating data before generic advice.",
+          "Separate known facts from inference.",
+          "Unknown is valid. Never invent dates, budgets, rights, splits, metrics, deal terms, team members or execution state.",
+          "Tie every action to the active 90-day goal when one exists.",
+          "Return at most three actions.",
+          "Prefer completing existing high-leverage work over spawning new initiatives.",
+          "Consequential external actions require explicit approval.",
+          "Never execute an external action.",
+          "Never overwrite artist-confirmed facts with AI inference.",
+        ];
+
+        const response = await openAiClient().responses.create({
+          model: process.env.BYD_OPENAI_MODEL || "gpt-6-luna",
+          input: [
+            {
+              role: "system",
+              content: [{ type: "input_text", text: ["You are the BYD AI CEO / Manager for an independent music artist.", ...systemRules].join("\n") }],
+            },
+            {
+              role: "user",
+              content: [{
+                type: "input_text",
+                text: [
+                  `Intent: ${intent}`,
+                  userMessage ? `User message: ${userMessage}` : "",
+                  "Artist Second Brain context:",
+                  JSON.stringify(context),
+                ].filter(Boolean).join("\n\n"),
+              }],
+            },
+          ],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "byd_ceo_response",
+              strict: true,
+              schema: ceoJsonSchema,
+            },
+          },
+          max_output_tokens: 3000,
+        });
+
+        if (!response.output_text) throw new Error("OpenAI returned no structured BYD CEO output.");
+        const parsed = ceoResponseSchema.parse(JSON.parse(response.output_text));
+
+        const existingTasks = await supabase.listTasks(currentArtistId(), false);
+        const normalizedExisting = new Set(existingTasks.map((task) => task.task.trim().toLowerCase()));
+        const writeback: Array<Record<string, unknown>> = [];
+
+        for (const action of parsed.actions) {
+          const normalizedTitle = action.title.trim().toLowerCase();
+          let task: any = existingTasks.find((row) => row.task.trim().toLowerCase() === normalizedTitle);
+
+          if (!task) {
+            task = await supabase.createTask({
+              artistId: currentArtistId(),
+              task: action.title,
+              nextAction: action.next_action,
+              priority: action.priority === "HIGH" ? "High" : action.priority === "LOW" ? "Low" : "Medium",
+              dueDate: action.due_date ?? undefined,
+              sourceAgent: "ceo-manager",
+              agentRunId: runId,
+            });
+            normalizedExisting.add(normalizedTitle);
+          }
+
+          let approval: unknown = null;
+          if (action.consequential) {
+            assertExternalActionMayBeStaged();
+            const approvalFingerprint = actionFingerprint({
+              artistId: currentArtistId(),
+              actionType: action.consequence_type || "OTHER",
+              summary: action.title,
+              relatedObject: task.id,
+            });
+            approval = await supabase.requestApproval({
+              artistId: currentArtistId(),
+              actionType: action.consequence_type || "OTHER",
+              summary: `${action.title}: ${action.why}`,
+              relatedObject: task.id,
+              sourceAgent: "ceo-manager",
+              actionFingerprint: approvalFingerprint,
+            });
+          }
+
+          writeback.push({
+            action,
+            task,
+            approval,
+            reusedTask: normalizedExisting.has(normalizedTitle) && existingTasks.some((row) => row.id === task.id),
+          });
+        }
+
+        await supabase.logAgentRun({
+          artistId: currentArtistId(),
+          runId,
+          sourceAgent: "ceo-manager",
+          trigger: intent,
+          state: "Succeeded",
+          approvalState: parsed.actions.some((action) => action.consequential) ? "Pending" : "Not Required",
+          actionFingerprint: runFingerprint,
+          notes: JSON.stringify({
+            model: response.model,
+            diagnosis: parsed.diagnosis,
+            taskCount: writeback.length,
+          }),
+        });
+
+        return asText({
+          mode: "LIVE_AI",
+          provider: "OPENAI",
+          model: response.model,
+          runId,
+          ...parsed,
+          writeback,
+        });
+      },
+    );
 
     server.tool(
       "get_recent_changes",
