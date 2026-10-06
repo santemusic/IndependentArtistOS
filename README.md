@@ -1,85 +1,65 @@
-# Independent Artist OS × Buzz
+# Beyond Your Decks — Independent Artist OS
 
-A governed multi-agent operating system for independent artists, designed for Buzz-style human + agent collaboration.
+BYD is a multi-tenant Artist Second Brain and AI management operating system for independent artists.
 
-## Status
+## Current architecture
 
-**Architecture: `v1.0.0-rc.1` — complete.**  
-**Production certification: pending official Buzz validation + runtime sandbox acceptance.**
+- **Supabase/Postgres** — canonical source of truth, tenant isolation, runtime state, tasks, approvals, research, CRM, knowledge and audit logs.
+- **Lovable** — product UI for artist onboarding and operating workflows.
+- **MCP on Render** — governed ChatGPT / AI access to the Artist OS.
+- **AI providers** — compute only. They do not own artist state.
+- **Runtime governance** — SUPERVISED by default; consequential external actions require approval.
 
-This distinction is intentional: repository architecture is finished, but the project must not claim a production runtime PASS until the actual Buzz environment has been validated and `TEST_RELEASE_001` has been executed successfully.
+## Primary product loop
 
-## Operating model
-
-**Artist (human Chairperson) → Artist CEO → Executive Chief of Staff → Agency CEOs → specialist employees → governed workflows → human approvals → measurable outcomes.**
-
-The OS treats every major artist-business function as an Agency: Executive, Music, Release, Content Factory, Marketing & Growth, PR & Media, Live, Partnerships, Relationship CRM, Commerce, Finance, Legal & Rights, Data & Intelligence, Operations/PMO, and Technology/Automation.
-
-## Wave-1 runtime
-
-The Buzz manifest intentionally activates a smaller control plane first:
-
-- Artist CEO
-- Executive Chief of Staff
-- Operations CEO
-- Music CEO
-- Release CEO
-- Content CEO
-- Growth CEO
-- Data CEO
-- Legal CEO
-- Finance CEO
-- Automation CEO
-- Orchestrator
-
-The larger specialist workforce remains source-controlled and is activated only after tested workload, routing, permissions and evaluation cases exist.
-
-## Start here
-
-- `ARTIST_OS.md` — master operating specification
-- `AGENTS.md` — Agency and agent roster
-- `BUZZ_ARCHITECTURE.md` — Buzz mapping
-- `BUZZ_VALIDATION.md` — structural + official validation procedure
-- `WAVE1_RUNTIME.md` — Wave-1 deployment and smoke test
-- `sandbox/TEST_RELEASE_001.md` — canonical end-to-end sandbox fixture
-- `STEP20_SANDBOX_RUNBOOK.md` — runtime test procedure
-- `system/INTEGRATION_REGISTRY.yaml` — integration ownership/risk registry
-- `STEP21_INTEGRATIONS.md` — controlled integration rollout
-- `PRODUCTION_READINESS.md` — final v1.0 production gate
-- `SECURITY.md` — security and trust-boundary policy
-- `system/PERMISSIONS.md` — human/agent authority boundaries
-- `.buzz/workflows/` — Buzz workflow examples
-
-## Core governance
-
-AI agents may research, draft, classify, organize, monitor, prepare, recommend and coordinate within their authority. Human approval remains mandatory for reserved high-impact actions such as legal execution, ownership/rights changes, major unbudgeted spend, designated final masters/artwork, sensitive public communication, money movement and destructive/privileged actions.
-
-`UNKNOWN` is a valid state. Agents must not invent rights clearance, cash, release delivery, approval, publication, spend, audience performance or external execution.
-
-## Validation
-
-Repository structural check:
-
-```bash
-python -m pip install pyyaml
-python tools/validate_buzz_pack.py
+```
+Artist onboarding
+→ AI Artist Positioning research
+→ artist review / confirmation
+→ Second Brain
+→ operating readiness
+→ AI CEO
+→ weekly priorities / specialist work
+→ approvals
+→ results / learnings
+→ next CEO cycle
 ```
 
-Official runtime-level check with the target Buzz CLI:
+## Repository layout
+
+- `mcp/` — production MCP server and Supabase adapter.
+- `agents/` — reusable specialist persona definitions.
+- `skills/` — reusable operating skills.
+- `system/` — governance schemas and permission rules.
+- `templates/` — reusable operating templates.
+- `SECURITY.md` — current security model.
+- `render.yaml` — Render deployment blueprint.
+
+## Source-of-truth rules
+
+1. Supabase is authoritative for artist-specific data.
+2. AI must not invent missing artist facts.
+3. Artist-confirmed facts must not be silently overwritten by AI inference.
+4. Internal writes respect runtime mode and idempotency.
+5. Consequential external actions require explicit approval.
+6. External actions are not assumed successful without execution evidence.
+
+## Development
 
 ```bash
-buzz pack validate .
-buzz pack inspect .
+cd mcp
+npm install
+npm run typecheck
+npm run build
+npm start
 ```
 
-The official installed Buzz validator is authoritative when its behavior differs from repository assumptions.
+## Deployment
 
-## Installation target
+The active MCP service runs on Render. Configuration is supplied through environment variables; no production credentials belong in Git.
 
-After validation, the Persona Pack is designed for Git-based Buzz installation. For controlled production, pin installation to a reviewed tag/revision rather than relying indefinitely on a moving branch.
+See `mcp/README.md`, `mcp/.env.example`, `render.yaml`, and `SECURITY.md`.
 
-## Finish line
+## Legacy files
 
-There is no required Step 23 for architecture construction. Promotion to `v1.0.0` is evidence-based and requires the gates in `PRODUCTION_READINESS.md`: official Buzz validation, Wave-1 sandbox acceptance, security/permission verification, reliability tests and one controlled live-project acceptance cycle.
-
-After that, changes are normal product iteration rather than continued OS construction.
+Some historical Buzz / Notion pilot files remain as minimal deprecated stubs because repository file deletion is restricted in the current automation environment. They are not part of the production architecture.
