@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkToolScope, validScopes, validPkceVerifier } from "../src/auth.js";
-import { executeClaim, type Claim } from "../src/worker.js";
+import { executeClaim, safeFailure, OperationalError, type Claim } from "../src/worker.js";
 import { ceoJsonSchema } from "../src/ceo-schema.js";
 
 const response = { current_state: { summary: "Test", facts_used: [] }, diagnosis: { primary_bottleneck: "Test", evidence: [], confidence: 0.5 }, actions: [], missing_data: [], notes: [] };
@@ -35,4 +35,9 @@ test("two uncertain completions never mark potentially committed success as fail
 });
 test("provider errors are redacted before database storage", async () => {
   await executeClaim({ rpc: async <T>(name: string, body: unknown) => { assert.equal(name, "fail_ai_gateway_request"); assert.equal(JSON.stringify(body).includes("sk-secret"), false); return {} as T; } }, { generate: async () => { throw new Error("sk-secret"); } }, claim);
+});
+
+test("operational diagnostics expose only classified codes", () => {
+  assert.equal(safeFailure(new Error("Bearer sk-secret")), "OPERATION_FAILED");
+  assert.equal(safeFailure(new OperationalError("DATABASE_HTTP_401_UNKNOWN")), "DATABASE_HTTP_401_UNKNOWN");
 });

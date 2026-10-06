@@ -2,9 +2,21 @@ import OpenAI from "openai";
 import { Ajv } from "ajv";
 import { ceoResponseSchema } from "./ceo-schema.js";
 
+export class OperationalError extends Error {
+  constructor(readonly code: string) { super(code); }
+}
+export function safeFailure(error: unknown): string {
+  if (error instanceof OperationalError) return error.code;
+  if (error instanceof OpenAI.APIError) {
+    const code = ["invalid_api_key", "model_not_found", "insufficient_quota", "invalid_json_schema", "unsupported_value", "rate_limit_exceeded"].includes(error.code ?? "") ? error.code : "request_failed";
+    return `PROVIDER_HTTP_${error.status ?? 0}_${code}`;
+  }
+  return "OPERATION_FAILED";
+}
+
 export class ServerDatabase {
-  private readonly url = process.env.SUPABASE_URL?.replace(/\/$/, "");
-  private readonly key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+  private readonly url = process.env.SUPABASE_URL?.trim().replace(/\/$/, "");
+  private readonly key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || process.env.SUPABASE_SECRET_KEY?.trim();
   get ready(): boolean { return Boolean(this.url && this.key); }
   async request<T>(path: string, body?: unknown): Promise<T> {
     if (!this.ready) throw new Error("DATABASE_NOT_CONFIGURED");
@@ -14,8 +26,13 @@ export class ServerDatabase {
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(15000),
     });
-    if (!r.ok) throw new Error("DATABASE_REQUEST_FAILED");
-    return await r.json() as T;
+    if (!r.ok) {
+      const error = await r.json().catch(() => ({})) as { code?: unknown };
+      const code = typeof error.code === "string" && /^(?:[0-9A-Z]{5}|PGRST[0-9]{3})$/.test(error.code) ? error.code : "UNKNOWN";
+      throw new OperationalError(`DATABASE_HTTP_${r.status}_${code}`);
+    }
+    const bodyText = await r.text();
+    return (bodyText ? JSON.parse(bodyText) : undefined) as T;
   }
   rpc<T>(name: string, body: unknown): Promise<T> { return this.request<T>(`rpc/${name}`, body); }
 }
@@ -65,8 +82,8 @@ export async function executeClaim(db: Pick<ServerDatabase, "rpc">, provider: St
     const validator = new Ajv({ strict: false, allErrors: false }).compile(claim.request_payload.response_schema);
     if (!validator(modelResult.response)) throw new Error("INVALID_MODEL_RESPONSE");
     ceoResponseSchema.parse(modelResult.response);
-  } catch {
-    await db.rpc("fail_ai_gateway_request", { _request_id: claim.request_id, _error_code: "MODEL_EXECUTION_FAILED", _error_message: "Provider execution or schema validation failed" });
+  } catch (error) {
+    await db.rpc("fail_ai_gateway_request", { _request_id: claim.request_id, _error_code: safeFailure(error), _error_message: "Provider execution or schema validation failed" });
     return;
   }
   // A completion timeout is ambiguous: retry only the idempotent completion RPC.
@@ -85,6 +102,8 @@ export function startAiWorker(db: ServerDatabase) {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastRecovery = 0;
+  let lastError: string | null = null;
+  let stage = "idle";
   const enabled = db.ready && providerReady;
   const provider = enabled ? new OpenAiProvider() : undefined;
   async function tick() {
@@ -93,27 +112,31 @@ export function startAiWorker(db: ServerDatabase) {
       if (process.env.MUSIC_OS_RUNTIME_MODE === "PAUSED") { state = "paused"; return; }
       state = "polling";
       if (Date.now() - lastRecovery > 60000) {
+        stage = "recovery";
         await db.rpc("recover_stale_runtime_jobs", {}); lastRecovery = Date.now();
       }
+      stage = "queue_read";
       const jobs = await db.request<Array<{ id: string; artist_workspace_id: string }>>("ai_gateway_requests?select=id,artist_workspace_id&status=eq.QUEUED&order=created_at.asc&limit=20");
       const seen = new Set<string>();
       for (const job of jobs) {
         if (stopped || seen.has(job.artist_workspace_id)) continue;
         seen.add(job.artist_workspace_id);
+        stage = "claim";
         const claim = await db.rpc<Claim>("claim_ai_gateway_request", { _request_id: job.id });
         if (!claim.claimed) continue;
         state = "executing";
+        stage = "execution";
         await executeClaim(db, provider, claim);
         if (seen.size >= 4) break;
       }
-      state = "polling";
-    } catch { state = "degraded"; console.error("AI worker operation failed; details redacted"); }
+      state = "polling"; lastError = null;
+    } catch (error) { state = "degraded"; lastError = `${stage}:${safeFailure(error)}`; console.error("AI worker operation failed", lastError); }
     finally { if (!stopped) { timer = setTimeout(tick, 5000); timer.unref(); } }
   }
   if (enabled) { timer = setTimeout(tick, 0); timer.unref(); }
   console.log("AI worker readiness", { databaseReady: db.ready, providerReady, enabled });
   return {
-    status: () => ({ state, enabled, databaseReady: db.ready, providerReady }),
+    status: () => ({ state, enabled, databaseReady: db.ready, providerReady, lastError }),
     stop: () => { stopped = true; state = "stopping"; if (timer) clearTimeout(timer); },
   };
 }
