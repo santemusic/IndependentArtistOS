@@ -36,6 +36,7 @@ const resourceId = `${publicOrigin}${MCP_PATH}`;
 const oauthIssuer = publicOrigin;
 const serverDatabase = new ServerDatabase();
 const aiWorker = startAiWorker(serverDatabase);
+const locallyConsumedOauthCodes = new Set<string>();
 
 const artistId = () => process.env.MUSIC_OS_ARTIST_ID ?? "default";
 
@@ -1201,13 +1202,24 @@ const httpServer = createServer(async (req, res) => {
         return;
       }
 
+      const codeHash = createHash("sha256").update(code).digest("hex");
       try {
         const consumed = await serverDatabase.rpc<boolean>("consume_mcp_oauth_code", {
-          _code_hash: createHash("sha256").update(code).digest("hex"),
+          _code_hash: codeHash,
           _expires_at: new Date(payload.exp * 1000).toISOString(),
         });
         if (!consumed) { writeJson(res, 400, { error: "invalid_grant" }); return; }
-      } catch { writeJson(res, 503, { error: "temporarily_unavailable" }); return; }
+      } catch (error) {
+        // Single-instance availability fallback: preserve one-time code semantics
+        // when privileged Supabase auth is temporarily unavailable.
+        if (locallyConsumedOauthCodes.has(codeHash)) {
+          writeJson(res, 400, { error: "invalid_grant" });
+          return;
+        }
+        locallyConsumedOauthCodes.add(codeHash);
+        setTimeout(() => locallyConsumedOauthCodes.delete(codeHash), 10 * 60 * 1000).unref();
+        console.warn("OAuth code replay store degraded to local process");
+      }
       const now = Math.floor(Date.now() / 1000);
       const accessToken = signPayload({
         kind: "access",
