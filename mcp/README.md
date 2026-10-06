@@ -36,6 +36,7 @@ Controlled internal writes:
 - `update_weekly_priorities`
 - `request_approval`
 - `log_agent_run`
+- `run_ai_ceo` — reads the connected Second Brain, produces structured diagnosis/actions, and writes only governed tasks/approvals.
 
 External execution is not implemented.
 
