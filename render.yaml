@@ -8,20 +8,20 @@ services:
     healthCheckPath: /
     autoDeployTrigger: off
     envVars:
-      - key: NOTION_TOKEN
-        sync: false
       - key: MCP_AUTH_TOKEN
         sync: false
-      - key: MUSIC_OS_ARTIST_ID
-        value: default
-      - key: MUSIC_OS_ARTIST_CONTEXT_PAGE_ID
+      - key: MCP_PUBLIC_URL
         sync: false
-      - key: MUSIC_OS_PROJECTS_DATABASE_ID
+      - key: SUPABASE_URL
         sync: false
-      - key: MUSIC_OS_TASKS_DATABASE_ID
+      - key: SUPABASE_ANON_KEY
         sync: false
-      - key: MUSIC_OS_AUTOMATION_RUNS_DATABASE_ID
+      - key: ARTIST_OS_APP_URL
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: BYD_OPENAI_MODEL
+        value: gpt-6-luna
       - key: MUSIC_OS_RUNTIME_MODE
         value: SUPERVISED
       - key: MUSIC_OS_EXTERNAL_ACTIONS
