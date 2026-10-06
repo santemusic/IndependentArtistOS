@@ -20,9 +20,19 @@ export class ServerDatabase {
   get ready(): boolean { return Boolean(this.url && this.key); }
   async request<T>(path: string, body?: unknown): Promise<T> {
     if (!this.ready) throw new Error("DATABASE_NOT_CONFIGURED");
+    const headers: Record<string, string> = {
+      apikey: this.key!,
+      "Content-Type": "application/json",
+    };
+    // Legacy service_role keys are JWTs and are valid as Bearer tokens.
+    // New Supabase sb_secret_* keys authenticate through the apikey header
+    // and must not be sent as an Authorization Bearer token.
+    if (!this.key!.startsWith("sb_secret_")) {
+      headers.Authorization = `Bearer ${this.key}`;
+    }
     const r = await fetch(`${this.url}/rest/v1/${path}`, {
       method: body === undefined ? "GET" : "POST",
-      headers: { apikey: this.key!, Authorization: `Bearer ${this.key}`, "Content-Type": "application/json" },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(15000),
     });
