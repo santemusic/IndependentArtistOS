@@ -18,6 +18,20 @@ export class ServerDatabase {
   private readonly url = process.env.SUPABASE_URL?.trim().replace(/\/$/, "");
   private readonly key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || process.env.SUPABASE_SECRET_KEY?.trim();
   get ready(): boolean { return Boolean(this.url && this.key); }
+
+  diagnostic(): { keyType: string; projectMatch: boolean | null } {
+    if (!this.url || !this.key) return { keyType: "missing", projectMatch: null };
+    const keyType = this.key.startsWith("sb_secret_") ? "secret" : this.key.split(".").length === 3 ? "legacy_jwt" : "unknown";
+    if (keyType !== "legacy_jwt") return { keyType, projectMatch: null };
+    try {
+      const payload = JSON.parse(Buffer.from(this.key.split(".")[1], "base64url").toString("utf8")) as { ref?: string };
+      const host = new URL(this.url).hostname;
+      const urlRef = host.endsWith(".supabase.co") ? host.slice(0, -".supabase.co".length) : null;
+      return { keyType, projectMatch: Boolean(payload.ref && urlRef && payload.ref === urlRef) };
+    } catch {
+      return { keyType, projectMatch: false };
+    }
+  }
   async request<T>(path: string, body?: unknown): Promise<T> {
     if (!this.ready) throw new Error("DATABASE_NOT_CONFIGURED");
     const headers: Record<string, string> = {
@@ -144,7 +158,7 @@ export function startAiWorker(db: ServerDatabase) {
     finally { if (!stopped) { timer = setTimeout(tick, 5000); timer.unref(); } }
   }
   if (enabled) { timer = setTimeout(tick, 0); timer.unref(); }
-  console.log("AI worker readiness", { databaseReady: db.ready, providerReady, enabled });
+  console.log("AI worker readiness", { databaseReady: db.ready, providerReady, enabled, databaseAuth: db.diagnostic() });
   return {
     status: () => ({ state, enabled, databaseReady: db.ready, providerReady, lastError }),
     stop: () => { stopped = true; state = "stopping"; if (timer) clearTimeout(timer); },
