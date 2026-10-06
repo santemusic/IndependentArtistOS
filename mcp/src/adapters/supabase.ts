@@ -350,6 +350,18 @@ export class SupabaseAdapter {
     return await this.directRead<Record<string, unknown>>("get_onboarding_prefill_summary");
   }
 
+  async getRuntimeControl(): Promise<Record<string, unknown>> {
+    return await this.gateway("get_runtime_control", {});
+  }
+
+  async beginAiRequest(intent: string, userMessage?: string): Promise<Record<string, unknown>> {
+    return this.gateway("begin_ai_request", { intent, user_message: userMessage ?? null });
+  }
+
+  async getAiRequest(requestId: string): Promise<Record<string, unknown>> {
+    return this.gateway("get_ai_request", { request_id: requestId });
+  }
+
   async listAiAgents(): Promise<any[]> {
     return await this.directRead<any[]>("list_ai_agents");
   }

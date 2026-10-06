@@ -15,7 +15,7 @@ The backend must validate current membership, token expiry/revocation and worksp
 
 ## Operations
 
-The server provides artist context, operating snapshots, tasks, CRM, activity, discovery, Second Brain and runtime information; controlled writes create/update internal records and stage approvals. `run_ai_ceo` currently calls OpenAI directly, validates structured output and writes tasks/approval requests. It is not the queued worker from issue #2.
+The server provides artist context, operating snapshots, tasks, CRM, activity, discovery, Second Brain and runtime information; controlled writes create/update internal records and stage approvals. `run_ai_ceo` queues a request through the canonical backend. `get_ai_request` returns its scoped status and result. The in-process worker atomically claims requests, validates the stored JSON schema and the CEO contract, and completes through governed database RPCs. A runtime row lock serializes pause/kill-switch changes with writeback.
 
 No external payment, contract, rights, publishing, distributor, ad-spend or outbound-message execution tool is implemented.
 
@@ -32,7 +32,8 @@ See [`.env.example`](.env.example) for the primary flow:
 | `SUPABASE_URL` | Canonical BYD backend URL |
 | `SUPABASE_ANON_KEY` | Public key used for direct RPC reads |
 | `ARTIST_OS_APP_URL` | BYD app origin for workspace connection |
-| `OPENAI_API_KEY` | Server-side key for the synchronous CEO tool |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only queue and OAuth replay RPC access; never a public/anon key |
+| `OPENAI_API_KEY` | Server-side key for the queue worker |
 | `BYD_OPENAI_MODEL` | Model configured by the operator |
 | `MUSIC_OS_RUNTIME_MODE` | `PAUSED`, `SUPERVISED` or `ACTIVE` |
 | `MUSIC_OS_EXTERNAL_ACTIONS` | `BLOCKED`, `APPROVAL_ONLY` or `ALLOWED` |
@@ -42,10 +43,21 @@ Keep `SUPERVISED` / `APPROVAL_ONLY` as the initial posture. The model and creden
 ## Build and release
 
 ```sh
-npm install
+npm ci
+npm test
 npm run typecheck
 npm run build
 npm start
 ```
 
-Render uses this directory as `rootDir`. CI typechecks and builds the runtime. Deploy a reviewed commit explicitly; the Blueprint disables automatic deployment. [Go-live checks](../docs/GO_LIVE.md) are required in addition to a passing build.
+Render uses this directory as `rootDir`. CI runs security regression tests, typechecks and builds the runtime. Deploy a reviewed commit explicitly; the Blueprint disables automatic deployment. [Go-live checks](../docs/GO_LIVE.md) are required in addition to a passing build.
+
+## Worker limits and prerequisites
+
+`/health` reports process liveness and separate worker readiness flags. Missing database/provider configuration disables the worker and the CEO tool refuses new queued work. OAuth code exchange requires the server database credential and the applied `consume_mcp_oauth_code` RPC. Existing refresh tokens issued before client binding must reconnect.
+
+The worker processes one provider call at a time per process, has a 60-second provider timeout and no automatic paid model retry. Completion is retried once without repeating the provider call. The configured model is the sole allowed model, prompts are limited to 64,000 characters, and output is limited to 3,000 tokens and three actions. Each workspace can create at most ten new requests per hour; identical requests reuse the existing ID. Failed/blocked requests remain terminal and must not be silently replayed. These limits bound usage; they are not a monetary budget or provider billing alert.
+
+Stale recovery runs every minute and marks interrupted requests/runs failed. All consequential actions require pending approval regardless of AUTO policy. No automatic external executor, scheduler or provider fallback is included. Multiple instances share atomic claims and OAuth code consumption, but coordinated global concurrency and cost limits still require separate capacity planning.
+
+Apply the recorded SQL migration explicitly to the BYD2 backend. The SQL regression fixture must run inside `BEGIN` / `ROLLBACK`. The MCP process never applies migrations on startup.

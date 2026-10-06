@@ -26,7 +26,7 @@ Do not initialize a second database or infer readiness from a project's healthy 
 - [ ] Secrets stay out of logs, responses and prompts; provider costs and per-workspace usage are bounded.
 - [ ] Backup restoration, deployment rollback, monitoring and incident ownership are verified.
 
-Before multiple server replicas, replace in-memory authorization-code replay tracking with shared atomic storage and verify refresh-token/client binding. RLS being enabled alone is not evidence that its policies are correct.
+Authorization-code consumption now uses shared atomic database storage, and refresh tokens bind to their issuing client. RLS being enabled alone is not evidence that its policies are correct.
 
 ## Release procedure
 
@@ -35,3 +35,11 @@ Record candidate commit, backend migration revision, test evidence, known blocke
 ## Cleanup boundary
 
 Removed static Buzz packaging, catalogs, templates and their validator are recoverable from Git history. Runtime source, imported compatibility adapters, dashboard, security policy and human approval boundaries remain. No database, live artist record or deployment is deleted by this cleanup.
+
+## Execution hardening, 2026-10-06
+
+Applied `docs/security/20261006_execution_hardening.sql` to the canonical BYD2 backend (`ptxwdxnbfmlafumwaxcu`). The similarly named dashboard project `blauyjcrhbwedfilwcdp` is not this app backend.
+
+The migration and its regression fixture passed together in a rolled-back transaction, then the fixture passed again against the committed definitions. Evidence covers task/approval deduplication, kill-switch enforcement, single claim, refusal of unclaimed completion, pause during execution, repeat completion, late failure after success, cross-workspace run/request rejection, OAuth code replay rejection, and malformed responses. No fixture records persisted.
+
+Runtime security tests cover scope enforcement, invalid AI output, provider-error redaction, and ambiguous completion without duplicate provider calls. Deployment must verify `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SECRET_KEY`), `OPENAI_API_KEY` and an accessible `BYD_OPENAI_MODEL`. Keep secrets out of this repository. The release remains uncertified until a live authenticated OAuth/worker request, deployment recovery and operational ownership are verified.

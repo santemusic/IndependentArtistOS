@@ -17,7 +17,8 @@ import {
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import OpenAI from "openai";
+import { ServerDatabase, startAiWorker } from "./worker.js";
+import { checkToolScope, validScopes, validPkceVerifier } from "./auth.js";
 import { NotionAdapter } from "./adapters/notion.js";
 import { SupabaseAdapter, type SupabaseConnection } from "./adapters/supabase.js";
 import {
@@ -31,12 +32,10 @@ const dashboardHtml = readFileSync(new URL("../public/dashboard.html", import.me
 const MCP_PATH = "/mcp";
 const port = Number(process.env.PORT ?? process.env.MUSIC_OS_PORT ?? 8787);
 const publicOrigin = (process.env.MCP_PUBLIC_URL ?? "https://independent-artist-os-mcp.onrender.com").replace(/\/$/, "");
-const SUPABASE_PUBLIC_ANON_KEY =
-  process.env.SUPABASE_ANON_KEY?.trim() ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0eHdkeG5iZm1sYWZ1bXdheGN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4ODg0MTgsImV4cCI6MjA4ODQ2NDQxOH0._ebQ9m5J6dbQCzqqFmxSFPk4AGYB1RdATCQVAPV-yXw";
 const resourceId = `${publicOrigin}${MCP_PATH}`;
 const oauthIssuer = publicOrigin;
-const usedAuthorizationCodes = new Set<string>();
+const serverDatabase = new ServerDatabase();
+const aiWorker = startAiWorker(serverDatabase);
 
 const artistId = () => process.env.MUSIC_OS_ARTIST_ID ?? "default";
 
@@ -45,91 +44,6 @@ function asText(value: unknown) {
     content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
   };
 }
-
-let openAiClientInstance: OpenAI | null = null;
-
-function openAiClient(): OpenAI {
-  if (!openAiClientInstance) openAiClientInstance = new OpenAI();
-  return openAiClientInstance;
-}
-
-const ceoActionSchema = z.object({
-  title: z.string().min(1),
-  why: z.string().min(1),
-  owner_type: z.enum(["ARTIST", "HUMAN", "AI_AGENT", "AGENCY"]),
-  owner_name: z.string().nullable(),
-  priority: z.enum(["HIGH", "MEDIUM", "LOW"]),
-  due_date: z.string().nullable(),
-  next_action: z.string().min(1),
-  domain: z.enum(["strategy", "music", "release", "content", "audience", "growth", "live", "revenue", "finance", "industry", "operations"]),
-  consequential: z.boolean(),
-  consequence_type: z.enum(["EMAIL", "SOCIAL_PUBLISH", "SPEND", "BOOKING_ACCEPTANCE", "CONTRACT_RIGHTS", "RELEASE_DATE_CHANGE", "PUBLIC_STATEMENT", "OTHER"]).nullable(),
-});
-
-const ceoResponseSchema = z.object({
-  current_state: z.object({
-    summary: z.string(),
-    facts_used: z.array(z.string()),
-  }),
-  diagnosis: z.object({
-    primary_bottleneck: z.string(),
-    evidence: z.array(z.string()),
-    confidence: z.number().min(0).max(1),
-  }),
-  actions: z.array(ceoActionSchema).max(3),
-  missing_data: z.array(z.string()),
-  notes: z.array(z.string()),
-});
-
-const ceoJsonSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["current_state", "diagnosis", "actions", "missing_data", "notes"],
-  properties: {
-    current_state: {
-      type: "object",
-      additionalProperties: false,
-      required: ["summary", "facts_used"],
-      properties: {
-        summary: { type: "string" },
-        facts_used: { type: "array", items: { type: "string" } },
-      },
-    },
-    diagnosis: {
-      type: "object",
-      additionalProperties: false,
-      required: ["primary_bottleneck", "evidence", "confidence"],
-      properties: {
-        primary_bottleneck: { type: "string" },
-        evidence: { type: "array", items: { type: "string" } },
-        confidence: { type: "number", minimum: 0, maximum: 1 },
-      },
-    },
-    actions: {
-      type: "array",
-      maxItems: 3,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["title", "why", "owner_type", "owner_name", "priority", "due_date", "next_action", "domain", "consequential", "consequence_type"],
-        properties: {
-          title: { type: "string" },
-          why: { type: "string" },
-          owner_type: { type: "string", enum: ["ARTIST", "HUMAN", "AI_AGENT", "AGENCY"] },
-          owner_name: { type: ["string", "null"] },
-          priority: { type: "string", enum: ["HIGH", "MEDIUM", "LOW"] },
-          due_date: { type: ["string", "null"] },
-          next_action: { type: "string" },
-          domain: { type: "string", enum: ["strategy", "music", "release", "content", "audience", "growth", "live", "revenue", "finance", "industry", "operations"] },
-          consequential: { type: "boolean" },
-          consequence_type: { type: ["string", "null"], enum: ["EMAIL", "SOCIAL_PUBLISH", "SPEND", "BOOKING_ACCEPTANCE", "CONTRACT_RIGHTS", "RELEASE_DATE_CHANGE", "PUBLIC_STATEMENT", "OTHER", null] },
-        },
-      },
-    },
-    missing_data: { type: "array", items: { type: "string" } },
-    notes: { type: "array", items: { type: "string" } },
-  },
-} as const;
 
 function secret(): string {
   const value = process.env.MCP_AUTH_TOKEN;
@@ -149,7 +63,7 @@ function signPayload(payload: Record<string, unknown>): string {
 
 function verifySignedPayload(token: string): Record<string, any> | null {
   const [encoded, signature] = token.split(".");
-  if (!encoded || !signature) return null;
+  if (!encoded || !signature || token.split(".").length !== 2) return null;
   const expected = createHmac("sha256", secret()).update(encoded).digest();
   let supplied: Buffer;
   try {
@@ -161,7 +75,7 @@ function verifySignedPayload(token: string): Record<string, any> | null {
 
   try {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-    if (typeof payload.exp === "number" && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    if (typeof payload.exp !== "number" || payload.exp <= Math.floor(Date.now() / 1000)) return null;
     return payload;
   } catch {
     return null;
@@ -197,7 +111,7 @@ function verifyAccessToken(authorizationHeader: string | undefined): Record<stri
     !payload ||
     payload.kind !== "access" ||
     payload.aud !== resourceId ||
-    typeof payload.scope !== "string"
+    !validScopes(payload.scope)
   ) return null;
   return payload;
 }
@@ -263,6 +177,7 @@ async function redeemArtistOsTicket(ticket: string, state: string): Promise<Supa
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ action: "redeem", ticket, state }),
+    signal: AbortSignal.timeout(15000),
   });
   const body: any = await response.json().catch(() => ({}));
   if (!response.ok || !body?.connection_token || !body?.workspace_id || !body?.user_id) {
@@ -343,6 +258,7 @@ function authorizationPage(params: URLSearchParams, error?: string): string {
 function createMusicOsServer(authPayload: Record<string, any> = {}) {
   const connection = decryptConnection(authPayload.conn);
   const isSupabase = connection?.provider === "supabase_gateway";
+  if (supabaseOauthConfigured() && (!isSupabase || !connection?.workspaceId || !connection?.userId)) throw new Error("Invalid connection");
   const adapter = isSupabase
     ? new SupabaseAdapter(connection as SupabaseConnection)
     : connection?.token
@@ -637,7 +553,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
 
     server.tool(
       "run_ai_ceo",
-      "Run the live BYD AI CEO against the connected artist's Second Brain. Creates only governed internal tasks and approval requests; it never executes external actions.",
+      "Queue a governed BYD AI CEO request. Use get_ai_request to read status/results. Consequential actions become approval requests and never execute externally.",
       {
         intent: z.enum(["help_me_grow", "weekly", "review_progress", "plan_release"]).default("help_me_grow"),
         userMessage: z.string().max(4000).optional(),
@@ -645,150 +561,16 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
       async ({ intent, userMessage }) => {
         assertInternalWriteAllowed();
 
-        const context: any = await supabase.getSecondBrainContext();
-        const runtime = context?.runtime_control ?? {};
-        if (runtime?.kill_switch === true) throw new Error("BYD runtime is blocked by the kill switch.");
-        if (String(runtime?.global_mode ?? "SUPERVISED").toUpperCase() === "PAUSED") {
-          throw new Error("BYD runtime is paused.");
-        }
-
-        const runFingerprint = actionFingerprint({
-          artistId: currentArtistId(),
-          actionType: "AI_CEO",
-          summary: [intent, context?.master_context?.goal_90d ?? "", context?.master_context?.bottleneck ?? ""].join("|"),
-          relatedObject: new Date().toISOString().slice(0, 10),
-        });
-
-        const runId = randomUUID();
-        await supabase.logAgentRun({
-          artistId: currentArtistId(),
-          runId,
-          sourceAgent: "ceo-manager",
-          trigger: intent,
-          state: "Started",
-          approvalState: "Not Required",
-          actionFingerprint: runFingerprint,
-          notes: "Live BYD AI CEO run via MCP.",
-        });
-
-        const systemRules = [
-          "Use the artist's current operating data before generic advice.",
-          "Separate known facts from inference.",
-          "Unknown is valid. Never invent dates, budgets, rights, splits, metrics, deal terms, team members or execution state.",
-          "Tie every action to the active 90-day goal when one exists.",
-          "Return at most three actions.",
-          "Prefer completing existing high-leverage work over spawning new initiatives.",
-          "Consequential external actions require explicit approval.",
-          "Never execute an external action.",
-          "Never overwrite artist-confirmed facts with AI inference.",
-        ];
-
-        const response = await openAiClient().responses.create({
-          model: process.env.BYD_OPENAI_MODEL || "gpt-6-luna",
-          input: [
-            {
-              role: "system",
-              content: [{ type: "input_text", text: ["You are the BYD AI CEO / Manager for an independent music artist.", ...systemRules].join("\n") }],
-            },
-            {
-              role: "user",
-              content: [{
-                type: "input_text",
-                text: [
-                  `Intent: ${intent}`,
-                  userMessage ? `User message: ${userMessage}` : "",
-                  "Artist Second Brain context:",
-                  JSON.stringify(context),
-                ].filter(Boolean).join("\n\n"),
-              }],
-            },
-          ],
-          text: {
-            format: {
-              type: "json_schema",
-              name: "byd_ceo_response",
-              strict: true,
-              schema: ceoJsonSchema,
-            },
-          },
-          max_output_tokens: 3000,
-        });
-
-        if (!response.output_text) throw new Error("OpenAI returned no structured BYD CEO output.");
-        const parsed = ceoResponseSchema.parse(JSON.parse(response.output_text));
-
-        const existingTasks = await supabase.listTasks(currentArtistId(), false);
-        const normalizedExisting = new Set(existingTasks.map((task) => task.task.trim().toLowerCase()));
-        const writeback: Array<Record<string, unknown>> = [];
-
-        for (const action of parsed.actions) {
-          const normalizedTitle = action.title.trim().toLowerCase();
-          let task: any = existingTasks.find((row) => row.task.trim().toLowerCase() === normalizedTitle);
-
-          if (!task) {
-            task = await supabase.createTask({
-              artistId: currentArtistId(),
-              task: action.title,
-              nextAction: action.next_action,
-              priority: action.priority === "HIGH" ? "High" : action.priority === "LOW" ? "Low" : "Medium",
-              dueDate: action.due_date ?? undefined,
-              sourceAgent: "ceo-manager",
-              agentRunId: runId,
-            });
-            normalizedExisting.add(normalizedTitle);
-          }
-
-          let approval: unknown = null;
-          if (action.consequential) {
-            assertExternalActionMayBeStaged();
-            const approvalFingerprint = actionFingerprint({
-              artistId: currentArtistId(),
-              actionType: action.consequence_type || "OTHER",
-              summary: action.title,
-              relatedObject: task.id,
-            });
-            approval = await supabase.requestApproval({
-              artistId: currentArtistId(),
-              actionType: action.consequence_type || "OTHER",
-              summary: `${action.title}: ${action.why}`,
-              relatedObject: task.id,
-              sourceAgent: "ceo-manager",
-              actionFingerprint: approvalFingerprint,
-            });
-          }
-
-          writeback.push({
-            action,
-            task,
-            approval,
-            reusedTask: normalizedExisting.has(normalizedTitle) && existingTasks.some((row) => row.id === task.id),
-          });
-        }
-
-        await supabase.logAgentRun({
-          artistId: currentArtistId(),
-          runId,
-          sourceAgent: "ceo-manager",
-          trigger: intent,
-          state: "Succeeded",
-          approvalState: parsed.actions.some((action) => action.consequential) ? "Pending" : "Not Required",
-          actionFingerprint: runFingerprint,
-          notes: JSON.stringify({
-            model: response.model,
-            diagnosis: parsed.diagnosis,
-            taskCount: writeback.length,
-          }),
-        });
-
-        return asText({
-          mode: "LIVE_AI",
-          provider: "OPENAI",
-          model: response.model,
-          runId,
-          ...parsed,
-          writeback,
-        });
+        if (!aiWorker.status().enabled) throw new Error("AI worker is not configured");
+        return asText(await supabase.beginAiRequest(intent, userMessage));
       },
+    );
+
+    server.tool(
+      "get_ai_request",
+      "Read status and validated results of a queued CEO request in the connected workspace.",
+      { requestId: z.string().uuid() },
+      async ({ requestId }) => asText(await supabase.getAiRequest(requestId)),
     );
 
     server.tool(
@@ -1036,7 +818,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     "get_runtime_control",
     "Read current runtime mode and external-action policy.",
     {},
-    async () => asText(getRuntimeControl()),
+    async () => asText(isSupabase ? await (adapter as SupabaseAdapter).getRuntimeControl() : getRuntimeControl()),
   );
 
   return server;
@@ -1045,6 +827,9 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
 const httpServer = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
+  if (req.method === "GET" && url.pathname === "/health") {
+    writeJson(res, 200, { process: "ready", worker: aiWorker.status() }); return;
+  }
   if (req.method === "GET" && url.pathname === "/") {
     res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
     res.end("Independent Artist OS MCP server");
@@ -1116,7 +901,8 @@ const httpServer = createServer(async (req, res) => {
     if (
       responseType !== "code" ||
       method !== "S256" ||
-      !challenge ||
+      !/^[A-Za-z0-9_-]{43}$/.test(challenge) ||
+      !validScopes(url.searchParams.get("scope") ?? "artist_os:read artist_os:write") ||
       !verifyClientId(clientId, redirectUri) ||
       !isTrustedRedirectUri(redirectUri) ||
       resource !== resourceId
@@ -1226,7 +1012,7 @@ const httpServer = createServer(async (req, res) => {
       res.writeHead(302, { location: target.toString(), "cache-control": "no-store" });
       res.end();
     } catch (error) {
-      console.error("Artist OS connection callback failed:", error);
+      console.error("Artist OS connection callback failed");
       res.writeHead(401, { "content-type": "text/plain; charset=utf-8" });
       res.end("Could not connect this Artist OS workspace.");
     }
@@ -1345,6 +1131,8 @@ const httpServer = createServer(async (req, res) => {
 
     if (
       !validKey ||
+      !validScopes(scope) ||
+      !/^[A-Za-z0-9_-]{43}$/.test(codeChallenge) ||
       body.get("response_type") !== "code" ||
       body.get("code_challenge_method") !== "S256" ||
       !verifyClientId(clientId, redirectUri) ||
@@ -1395,7 +1183,10 @@ const httpServer = createServer(async (req, res) => {
       if (
         !payload ||
         payload.kind !== "auth_code" ||
-        usedAuthorizationCodes.has(payload.nonce) ||
+        typeof payload.nonce !== "string" ||
+        payload.resource !== resourceId ||
+        !validScopes(payload.scope) ||
+        !validPkceVerifier(codeVerifier) ||
         payload.client_id !== clientId ||
         payload.redirect_uri !== redirectUri ||
         !verifyClientId(clientId, redirectUri)
@@ -1410,7 +1201,13 @@ const httpServer = createServer(async (req, res) => {
         return;
       }
 
-      usedAuthorizationCodes.add(payload.nonce);
+      try {
+        const consumed = await serverDatabase.rpc<boolean>("consume_mcp_oauth_code", {
+          _code_hash: createHash("sha256").update(code).digest("hex"),
+          _expires_at: new Date(payload.exp * 1000).toISOString(),
+        });
+        if (!consumed) { writeJson(res, 400, { error: "invalid_grant" }); return; }
+      } catch { writeJson(res, 503, { error: "temporarily_unavailable" }); return; }
       const now = Math.floor(Date.now() / 1000);
       const accessToken = signPayload({
         kind: "access",
@@ -1423,6 +1220,7 @@ const httpServer = createServer(async (req, res) => {
       });
       const refreshToken = signPayload({
         kind: "refresh",
+        client_id: clientId,
         aud: resourceId,
         scope: payload.scope,
         sub: payload.sub ?? "artist-os-owner",
@@ -1443,7 +1241,7 @@ const httpServer = createServer(async (req, res) => {
     if (grantType === "refresh_token") {
       const refreshToken = body.get("refresh_token") ?? "";
       const payload = verifySignedPayload(refreshToken);
-      if (!payload || payload.kind !== "refresh" || payload.aud !== resourceId) {
+      if (!payload || payload.kind !== "refresh" || payload.aud !== resourceId || payload.client_id !== body.get("client_id") || !verifyClientId(payload.client_id) || !validScopes(payload.scope)) {
         writeJson(res, 400, { error: "invalid_grant" });
         return;
       }
@@ -1507,7 +1305,21 @@ const httpServer = createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
 
-    const server = createMusicOsServer(authPayload);
+    if (req.method === "POST") {
+      try {
+        const parsed = JSON.parse(await readBody(req));
+        const requests = Array.isArray(parsed) ? parsed : [parsed];
+        for (const request of requests) {
+          if (request.method === "tools/call" && !checkToolScope(authPayload.scope, request.params?.name)) {
+            writeJson(res, 403, { error: "insufficient_scope" }); return;
+          }
+        }
+        (req as any).body = parsed;
+      } catch { writeJson(res, 400, { error: "invalid_request" }); return; }
+    }
+    let server: McpServer;
+    try { server = createMusicOsServer(authPayload); }
+    catch { writeJson(res, 401, { error: "invalid_connection" }); return; }
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
@@ -1520,9 +1332,9 @@ const httpServer = createServer(async (req, res) => {
 
     try {
       await server.connect(transport);
-      await transport.handleRequest(req, res);
+      await transport.handleRequest(req, res, (req as any).body);
     } catch (error) {
-      console.error("Error handling MCP request:", error);
+      console.error("Error handling MCP request");
       if (!res.headersSent) res.writeHead(500).end("Internal server error");
     }
     return;
@@ -1540,3 +1352,5 @@ httpServer.listen(port, () => {
     notionClientSecret: Boolean(process.env.NOTION_OAUTH_CLIENT_SECRET),
   });
 });
+
+process.on("SIGTERM", () => { aiWorker.stop(); httpServer.close(); });
