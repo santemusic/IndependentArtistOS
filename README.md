@@ -1,52 +1,24 @@
 # Beyond Your Decks — Independent Artist OS
 
-BYD is a multi-tenant Artist Second Brain and AI management operating system for independent artists.
+Governed MCP runtime connecting ChatGPT to artist workspaces in the BYD Second Brain.
 
-## Current architecture
+## What lives here
 
-- **Supabase/Postgres** — canonical source of truth, tenant isolation, runtime state, tasks, approvals, research, CRM, knowledge and audit logs.
-- **Lovable** — product UI for artist onboarding and operating workflows.
-- **MCP on Render** — governed ChatGPT / AI access to the Artist OS.
-- **AI providers** — compute only. They do not own artist state.
-- **Runtime governance** — SUPERVISED by default; consequential external actions require approval.
+- [`mcp/`](mcp/README.md): Node/TypeScript MCP server, dashboard and backend adapters.
+- [`render.yaml`](render.yaml): Render deployment blueprint.
+- [`SECURITY.md`](SECURITY.md): tenant isolation, approvals, secrets and incident policy.
+- [`system/PERMISSIONS.md`](system/PERMISSIONS.md): human authority boundaries.
+- [`docs/GO_LIVE.md`](docs/GO_LIVE.md): release checks and outstanding production work.
 
-## Primary product loop
+The product UI, Supabase functions and database schema belong to the [BYD2 Lovable project](https://lovable.dev/projects/7becdc68-b0ff-45d3-ba4b-d86a42e79c29). They are not managed by this repository. Supabase is the canonical store for artist context, memberships, tasks and approvals; model providers supply compute.
 
-```
-Artist onboarding
-→ AI Artist Positioning research
-→ artist review / confirmation
-→ Second Brain
-→ operating readiness
-→ AI CEO
-→ weekly priorities / specialist work
-→ approvals
-→ results / learnings
-→ next CEO cycle
-```
-
-## Repository layout
-
-- `mcp/` — production MCP server and Supabase adapter.
-- `agents/` — reusable specialist persona definitions.
-- `skills/` — reusable operating skills.
-- `system/` — governance schemas and permission rules.
-- `templates/` — reusable operating templates.
-- `SECURITY.md` — current security model.
-- `render.yaml` — Render deployment blueprint.
-
-## Source-of-truth rules
-
-1. Supabase is authoritative for artist-specific data.
-2. AI must not invent missing artist facts.
-3. Artist-confirmed facts must not be silently overwritten by AI inference.
-4. Internal writes respect runtime mode and idempotency.
-5. Consequential external actions require explicit approval.
-6. External actions are not assumed successful without execution evidence.
+Each primary MCP connection is bound to one user and one artist workspace. Multiple artists share the runtime, with authorization enforced by the backend.
 
 ## Development
 
-```bash
+Requires Node.js 22.
+
+```sh
 cd mcp
 npm install
 npm run typecheck
@@ -54,12 +26,10 @@ npm run build
 npm start
 ```
 
-## Deployment
+Supply environment variables using [`mcp/.env.example`](mcp/.env.example) as a template. The server reads its process environment; `npm start` does not automatically load a `.env` file.
 
-The active MCP service runs on Render. Configuration is supplied through environment variables; no production credentials belong in Git.
+## Release status
 
-See `mcp/README.md`, `mcp/.env.example`, `render.yaml`, and `SECURITY.md`.
+Repository cleanup is not production certification. The current `run_ai_ceo` tool calls OpenAI synchronously; the queue worker described in [issue #2](https://github.com/santemusic/IndependentArtistOS/issues/2) remains separate work. See the go-live checklist before deployment or horizontal scaling.
 
-## Legacy files
-
-Most obsolete Buzz-era deployment and validation documents have been removed. A few historical files remain only where repository automation safety rules prevented deletion or where the material is still reusable. They are not canonical. The current sources of truth are this README, `mcp/README.md`, `SECURITY.md`, `mcp/.env.example`, and `render.yaml`.
+Historical Buzz packaging, static persona/skill catalogs and planning templates were removed from the current tree because the MCP runtime does not load them. They remain recoverable through Git history.
