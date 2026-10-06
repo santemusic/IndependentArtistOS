@@ -43,3 +43,11 @@ Applied `docs/security/20261006_execution_hardening.sql` to the canonical BYD2 b
 The migration and its regression fixture passed together in a rolled-back transaction, then the fixture passed again against the committed definitions. Evidence covers task/approval deduplication, kill-switch enforcement, single claim, refusal of unclaimed completion, pause during execution, repeat completion, late failure after success, cross-workspace run/request rejection, OAuth code replay rejection, and malformed responses. No fixture records persisted.
 
 Runtime security tests cover scope enforcement, invalid AI output, provider-error redaction, and ambiguous completion without duplicate provider calls. Deployment must verify `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SECRET_KEY`), `OPENAI_API_KEY` and an accessible `BYD_OPENAI_MODEL`. Keep secrets out of this repository. The release remains uncertified until a live authenticated OAuth/worker request, deployment recovery and operational ownership are verified.
+
+## Render verification, 2026-10-06 09:34 UTC
+
+Release `84302603b8a5d4e89cbd1ef28fc46b12d7b46d57` is deployed on Render (`dep-db2c0sm7bikc73d8dc80`). The service now tracks `main`, builds with `cd mcp && npm ci && npm run build`, and checks `/health`. All seven local security tests, typecheck and build passed. Runtime mode remains `SUPERVISED`.
+
+**Release acceptance is blocked:** the live worker reports `recovery:DATABASE_HTTP_401_UNKNOWN`. The server credential is configured, but the canonical Supabase endpoint rejects it. The recovery RPC itself succeeds when tested under the database service role. This is not a verified working database credential. OAuth one-time-code exchange and the real provider/queue test remain unverified and blocked. No production test artist/request was created. No rollback was executed; the new security controls remain deployed.
+
+Next handoff: replace `SUPABASE_SERVICE_ROLE_KEY` directly in Render with a valid server key for `ptxwdxnbfmlafumwaxcu`; never paste it into chat or commit it. Redeploy, require `/health` worker state `polling` without `lastError`, then complete authenticated OAuth and a synthetic AI request. The service still uses a Free instance that can spin down; continuous background processing and scaling require an explicitly selected always-on compute plan.
