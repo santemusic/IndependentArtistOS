@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: independent-artist-os-mcp
+    runtime: node
+    rootDir: mcp
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeployTrigger: off
+    envVars:
+      - key: MCP_AUTH_TOKEN
+        sync: false
+      - key: MCP_PUBLIC_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: ARTIST_OS_APP_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: BYD_OPENAI_MODEL
+        value: gpt-6-luna
+      - key: MUSIC_OS_RUNTIME_MODE
+        value: SUPERVISED
+      - key: MUSIC_OS_EXTERNAL_ACTIONS
+        value: APPROVAL_ONLY
