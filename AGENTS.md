@@ -1,67 +1,18 @@
-# Artist OS Agent Roster
+# Repository instructions
 
-## Executive Agency
-CEO: `@artist-ceo`
-- `@chief-of-staff` — cross-agency coordination
-- `@goal-architect` — converts artist intent into measurable goals
-- `@brand-director` — brand narrative and identity guardrails
-- `@priority-officer` — portfolio prioritization
+## Scope
 
-## Music & Product Agency
-CEO: `@music-ceo`
-- `@a-and-r`, `@songwriting`, `@production`, `@recording`, `@mixing`, `@mastering`, `@metadata`, `@catalog`
+This repository owns the MCP runtime and Render deployment configuration. BYD2 owns the product UI, Supabase schema and Edge Functions. Do not invent backend RPC contracts or copy artist business data into this repository.
 
-## Release Agency
-CEO: `@release-ceo`
-- `@release-strategist`, `@release-pm`, `@distribution`, `@dsp-pitch`, `@presave`, `@release-day`, `@post-release`
+## Working contract
 
-## Content Factory Agency
-CEO: `@content-ceo`
-- `@creative-director`, `@content-strategist`, `@script-writer`, `@copywriter`, `@video-producer`, `@video-editor`, `@photography`, `@designer`, `@repurposing`, `@content-librarian`
+For material work record the objective, inputs, owner, deliverable, risks, dependencies, approval owner, definition of done and next handoff in the change description. Use an existing goal/project reference when supplied; never fabricate IDs or approvals.
 
-## Marketing & Growth Agency
-CEO: `@growth-ceo`
-- `@campaign-strategist`, `@social-manager`, `@community-manager`, `@paid-media`, `@email-crm`, `@playlist-growth`, `@creator-seeding`, `@fan-funnel`
-
-## PR & Media Agency
-CEO: `@pr-ceo`
-- `@narrative`, `@press-kit`, `@media-relations`, `@interview-prep`
-
-## Live Agency
-CEO: `@live-ceo`
-- `@booking`, `@tour-manager`, `@production-manager`, `@rehearsal-director`, `@hospitality`, `@show-content`, `@settlement`
-
-## Partnerships & Business Development Agency
-CEO: `@partnerships-ceo`
-- `@brand-partnerships`, `@collaborations`, `@sync`, `@sponsorship`
-
-## Contacts / CRM Agency
-CEO: `@relationship-ceo`
-- `@crm-custodian`, `@follow-up`, `@network-map`
-
-## Merch & Commerce Agency
-CEO: `@commerce-ceo`
-- `@merch-product`, `@ecommerce`, `@drop-campaign`, `@fulfillment`
-
-## Finance Agency
-CEO: `@finance-ceo`
-- `@budget`, `@cashflow`, `@royalty`, `@invoice`, `@p-and-l`
-
-## Legal & Rights Agency
-CEO: `@legal-ceo`
-- `@contract-admin`, `@splits`, `@copyright`, `@clearance`, `@trademark`
-
-## Data & Intelligence Agency
-CEO: `@data-ceo`
-- `@dashboard`, `@experiment`, `@insight`
-
-## Operations / PMO Agency
-CEO: `@ops-ceo`
-- `@project-manager`, `@task-router`, `@calendar`, `@meeting`, `@sop`
-
-## Automation & AI Agency
-CEO: `@automation-ceo`
-- `@orchestrator`, `@research`, `@drafting`, `@qa`, `@knowledge`, `@automation-builder`
-
-## Universal agent contract
-Every material assignment must contain: Goal ID, Project ID, owner, objective, inputs, deliverable, deadline, dependencies, risks, approval owner, definition of done and next recipient. Agents must not fabricate missing inputs or approvals and must escalate irreversible decisions to the appropriate human.
+- Keep authenticated user and workspace boundaries intact.
+- Preserve human authority in SECURITY.md and system/PERMISSIONS.md.
+- Never fabricate missing facts, payments, rights, external execution or completion.
+- Never commit secrets or log credentials, raw authorization headers or connection tokens.
+- Runtime changes require typecheck and build; use focused tests for changed security or execution behavior.
+- Keep consequential external actions gated. Escalate irreversible, legally material, brand-defining or over-budget decisions to the appropriate human.
+- Do not deploy, switch production branches or migrate production data as a side effect of documentation cleanup.
+- Keep source, deployment configuration and operator documentation consistent.
