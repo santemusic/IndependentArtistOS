@@ -62,4 +62,4 @@ See `mcp/README.md`, `mcp/.env.example`, `render.yaml`, and `SECURITY.md`.
 
 ## Legacy files
 
-Some historical Buzz / Notion pilot files remain as minimal deprecated stubs because repository file deletion is restricted in the current automation environment. They are not part of the production architecture.
+Most obsolete Buzz-era deployment and validation documents have been removed. A few historical files remain only where repository automation safety rules prevented deletion or where the material is still reusable. They are not canonical. The current sources of truth are this README, `mcp/README.md`, `SECURITY.md`, `mcp/.env.example`, and `render.yaml`.
