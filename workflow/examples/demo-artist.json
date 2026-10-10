@@ -1,0 +1,337 @@
+{
+  "schemaVersion": 1,
+  "templateVersion": "1.0.0-draft",
+  "revision": 1,
+  "artist": {
+    "id": "DEMO-ARTIST",
+    "name": "Fiktiver Demo-Artist",
+    "careerStage": null,
+    "onboardingStatus": null,
+    "owner": null
+  },
+  "sources": [],
+  "monthlyInputs": [],
+  "cycles": [
+    {
+      "id": "REL-DEMO-001",
+      "releaseDate": "2026-11-27",
+      "planVersion": 1,
+      "closed": false,
+      "sourceVersions": {},
+      "inputExceptions": [],
+      "reviews": [
+        {
+          "domain": "career",
+          "state": "pending",
+          "planVersion": 1,
+          "evidence": null,
+          "reviewer": null,
+          "decision": null
+        },
+        {
+          "domain": "music_releases",
+          "state": "pending",
+          "planVersion": 1,
+          "evidence": null,
+          "reviewer": null,
+          "decision": null
+        },
+        {
+          "domain": "growth",
+          "state": "pending",
+          "planVersion": 1,
+          "evidence": null,
+          "reviewer": null,
+          "decision": null
+        },
+        {
+          "domain": "content",
+          "state": "pending",
+          "planVersion": 1,
+          "evidence": null,
+          "reviewer": null,
+          "decision": null
+        },
+        {
+          "domain": "live",
+          "state": "pending",
+          "planVersion": 1,
+          "evidence": null,
+          "reviewer": null,
+          "decision": null
+        },
+        {
+          "domain": "relationships",
+          "state": "pending",
+          "planVersion": 1,
+          "evidence": null,
+          "reviewer": null,
+          "decision": null
+        },
+        {
+          "domain": "rights_revenue",
+          "state": "pending",
+          "planVersion": 1,
+          "evidence": null,
+          "reviewer": null,
+          "decision": null
+        }
+      ],
+      "gates": [
+        {
+          "id": "G0",
+          "state": "pending",
+          "planVersion": 1,
+          "approvedBy": null,
+          "approvedAt": null,
+          "evidence": null
+        },
+        {
+          "id": "G1",
+          "state": "pending",
+          "planVersion": 1,
+          "approvedBy": null,
+          "approvedAt": null,
+          "evidence": null
+        },
+        {
+          "id": "G2",
+          "state": "pending",
+          "planVersion": 1,
+          "approvedBy": null,
+          "approvedAt": null,
+          "evidence": null
+        },
+        {
+          "id": "G3",
+          "state": "pending",
+          "planVersion": 1,
+          "approvedBy": null,
+          "approvedAt": null,
+          "evidence": null
+        }
+      ],
+      "tasks": [
+        {
+          "id": "BYD-REL-T01",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T02",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T03",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T04",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T05",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T06",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T07",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T08",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T09",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T10",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T11",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T12",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T13",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T14",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T15",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T16",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T17",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T18",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T19",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T20",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T21",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T22",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T23",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        },
+        {
+          "id": "BYD-REL-T24",
+          "planVersion": 1,
+          "state": "todo",
+          "owner": null,
+          "evidence": null,
+          "notApplicableReason": null,
+          "dueDate": null
+        }
+      ]
+    }
+  ],
+  "carryForward": [],
+  "audit": []
+}
+
