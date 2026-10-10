@@ -1,0 +1,507 @@
+{
+  "version": "1.0.0-draft",
+  "tasks": [
+    {
+      "id": "BYD-REL-T01",
+      "title": "Release registrieren",
+      "domain": "Music & Releases",
+      "offsetDays": -56,
+      "dependencies": [],
+      "inputIds": [
+        "REQ-01",
+        "REQ-02",
+        "REQ-04"
+      ],
+      "ownerRole": "Release-Koordination; Artist",
+      "completionEvidence": "Release-Steckbrief, Cycle-ID, offene Angaben, Quellenliste",
+      "approvalRequirement": "Artist bestätigt Umfang; Datensatzanlage separat bestätigen",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T02",
+      "title": "Ausgangslage festhalten",
+      "domain": "Career, Growth",
+      "offsetDays": -49,
+      "dependencies": [
+        "BYD-REL-T01"
+      ],
+      "inputIds": [
+        "REQ-01",
+        "REQ-02",
+        "REQ-09",
+        "REQ-10"
+      ],
+      "ownerRole": "Career-Fachrolle",
+      "completionEvidence": "Baseline-Snapshot, belegte/unklare Werte, vorläufiger Engpass",
+      "approvalRequirement": "BYD Lead und Artist bestätigt Ziele und Annahmen",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T03",
+      "title": "Release-Rolle entscheiden",
+      "domain": "Career",
+      "offsetDays": -49,
+      "dependencies": [
+        "BYD-REL-T02"
+      ],
+      "inputIds": [
+        "REQ-01",
+        "REQ-02",
+        "REQ-03",
+        "REQ-18"
+      ],
+      "ownerRole": "Career-Fachrolle",
+      "completionEvidence": "Release-Ziel, Beitrag zum 90-Tage-Ziel, Kapazitätsgrenze",
+      "approvalRequirement": "BYD Lead und Artist",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T04",
+      "title": "Repertoire und Lieferweg prüfen",
+      "domain": "Music & Releases",
+      "offsetDays": -49,
+      "dependencies": [
+        "BYD-REL-T01"
+      ],
+      "inputIds": [
+        "REQ-04",
+        "REQ-05",
+        "REQ-06",
+        "REQ-08"
+      ],
+      "ownerRole": "Music-Fachrolle",
+      "completionEvidence": "Qualitäts-/Asset-Lückenliste, belegte Lieferanforderungen und kritischer Pfad",
+      "approvalRequirement": "Artist bestätigt finale kreative Auswahl",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T05",
+      "title": "Rechte und Credits klären",
+      "domain": "Rights & Revenue",
+      "offsetDays": -42,
+      "dependencies": [
+        "BYD-REL-T01",
+        "BYD-REL-T04"
+      ],
+      "inputIds": [
+        "REQ-04",
+        "REQ-07",
+        "REQ-17",
+        "REQ-18"
+      ],
+      "ownerRole": "Rights Fachrolle; Artist",
+      "completionEvidence": "Trackbezogene Klärungsliste und belegter Freigabestatus",
+      "approvalRequirement": "Zuständige Rechteinhaber bzw. erforderliche menschliche Entscheidung",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T06",
+      "title": "Wachstums-Hypothese definieren",
+      "domain": "Growth",
+      "offsetDays": -42,
+      "dependencies": [
+        "BYD-REL-T02",
+        "BYD-REL-T03"
+      ],
+      "inputIds": [
+        "REQ-01",
+        "REQ-03",
+        "REQ-09",
+        "REQ-10",
+        "REQ-12"
+      ],
+      "ownerRole": "Growth-Fachrolle",
+      "completionEvidence": "Ein priorisierter Test mit Metrik, Messfenster und Stoppkriterium",
+      "approvalRequirement": "BYD Lead bestätigt Testumfang; Ausgaben separat",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T07",
+      "title": "Content-Bestand und Botschaft prüfen",
+      "domain": "Content",
+      "offsetDays": -42,
+      "dependencies": [
+        "BYD-REL-T03",
+        "BYD-REL-T04"
+      ],
+      "inputIds": [
+        "REQ-01",
+        "REQ-06",
+        "REQ-10",
+        "REQ-11"
+      ],
+      "ownerRole": "Content-Fachrolle",
+      "completionEvidence": "Content-Lücken, Kernbotschaften, wiederverwendbare Formate",
+      "approvalRequirement": "Artist bestätigt Darstellung",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T08",
+      "title": "Live-Beitrag prüfen",
+      "domain": "Live",
+      "offsetDays": -42,
+      "dependencies": [
+        "BYD-REL-T02",
+        "BYD-REL-T03"
+      ],
+      "inputIds": [
+        "REQ-01",
+        "REQ-02",
+        "REQ-09",
+        "REQ-13",
+        "REQ-14"
+      ],
+      "ownerRole": "Live-Fachrolle",
+      "completionEvidence": "Aktiv/beobachten/zurückstellen mit Begründung; gegebenenfalls Rechercheauftrag",
+      "approvalRequirement": "BYD Lead und Artist; Buchung oder Ansprache separat",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T09",
+      "title": "Beziehungen priorisieren",
+      "domain": "Relationships",
+      "offsetDays": -42,
+      "dependencies": [
+        "BYD-REL-T01",
+        "BYD-REL-T03"
+      ],
+      "inputIds": [
+        "REQ-01",
+        "REQ-15"
+      ],
+      "ownerRole": "Relationships-Fachrolle",
+      "completionEvidence": "Relevante Beziehungen, nächste Schritte, Wartezeiten",
+      "approvalRequirement": "BYD Lead und Artist bestätigt Auswahl; Versand separat",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T10",
+      "title": "Wirtschaftliche Szenarien erstellen",
+      "domain": "Rights & Revenue",
+      "offsetDays": -42,
+      "dependencies": [
+        "BYD-REL-T02",
+        "BYD-REL-T03",
+        "BYD-REL-T05"
+      ],
+      "inputIds": [
+        "REQ-03",
+        "REQ-12",
+        "REQ-14",
+        "REQ-16"
+      ],
+      "ownerRole": "Revenue-Fachrolle",
+      "completionEvidence": "Vorsichtiges/Basis-/ambitioniertes Szenario mit Annahmen und Datenlücken",
+      "approvalRequirement": "BYD Lead bestätigt Rahmen; keine Ausgabenfreigabe durch Forecast",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T11",
+      "title": "7-Domänen-Plan freigeben",
+      "domain": "Alle sieben",
+      "offsetDays": -35,
+      "dependencies": [
+        "BYD-REL-T03",
+        "BYD-REL-T04",
+        "BYD-REL-T05",
+        "BYD-REL-T06",
+        "BYD-REL-T07",
+        "BYD-REL-T08",
+        "BYD-REL-T09",
+        "BYD-REL-T10"
+      ],
+      "inputIds": [
+        "REQ-18"
+      ],
+      "ownerRole": "Release-Koordination; BYD Lead",
+      "completionEvidence": "G1-Entscheidung, Top 3, Verantwortliche, Planversion und offene Gates",
+      "approvalRequirement": "Ausdrückliche Planfreigabe",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T12",
+      "title": "AssetKit fertigstellen",
+      "domain": "Music, Content",
+      "offsetDays": -28,
+      "dependencies": [
+        "BYD-REL-T05",
+        "BYD-REL-T07",
+        "BYD-REL-T11"
+      ],
+      "inputIds": [
+        "REQ-04",
+        "REQ-05",
+        "REQ-06",
+        "REQ-07",
+        "REQ-11",
+        "REQ-18"
+      ],
+      "ownerRole": "Content und Music Fachrolle; Artist",
+      "completionEvidence": "Versioniertes, vollständiges AssetKit mit Prüfliste",
+      "approvalRequirement": "Artist und BYD Lead bestätigt finale Version",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T13",
+      "title": "Lieferung/Pitch vorbereiten und belegen",
+      "domain": "Music & Releases",
+      "offsetDays": null,
+      "dependencies": [
+        "BYD-REL-T05",
+        "BYD-REL-T11",
+        "BYD-REL-T12"
+      ],
+      "inputIds": [
+        "REQ-04",
+        "REQ-05",
+        "REQ-06",
+        "REQ-07",
+        "REQ-08",
+        "REQ-18"
+      ],
+      "ownerRole": "Artist oder ausdrücklich autorisierte ausführende Rolle",
+      "completionEvidence": "Übergabepaket sowie nach Artist-Ausführung getrennter Upload-/Annahmebeleg",
+      "approvalRequirement": "Konkrete Einreichung/Veröffentlichung gesondert",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T14",
+      "title": "EditorialPlan und TrendPost entwerfen",
+      "domain": "Content",
+      "offsetDays": -21,
+      "dependencies": [
+        "BYD-REL-T06",
+        "BYD-REL-T07",
+        "BYD-REL-T12"
+      ],
+      "inputIds": [
+        "REQ-01",
+        "REQ-06",
+        "REQ-10",
+        "REQ-11",
+        "REQ-18"
+      ],
+      "ownerRole": "Content-Fachrolle",
+      "completionEvidence": "Umsetzbarer Plan und priorisierte Entwürfe mit Asset-Verweisen",
+      "approvalRequirement": "Artist und BYD Lead für finale Inhalte; Veröffentlichung separat",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T15",
+      "title": "Heatmap validieren",
+      "domain": "Growth, Live",
+      "offsetDays": -21,
+      "dependencies": [
+        "BYD-REL-T02",
+        "BYD-REL-T06",
+        "BYD-REL-T08"
+      ],
+      "inputIds": [
+        "REQ-09",
+        "REQ-10",
+        "REQ-12",
+        "REQ-13",
+        "REQ-14"
+      ],
+      "ownerRole": "Growth-Fachrolle",
+      "completionEvidence": "Priorisierte Regionen/Formate plus Datengüte und Gegenhypothesen",
+      "approvalRequirement": "Interne Analyse; Aktivierung separat",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T16",
+      "title": "DMSequence vorbereiten",
+      "domain": "Relationships",
+      "offsetDays": -14,
+      "dependencies": [
+        "BYD-REL-T09",
+        "BYD-REL-T12",
+        "BYD-REL-T15"
+      ],
+      "inputIds": [
+        "REQ-06",
+        "REQ-11",
+        "REQ-15",
+        "REQ-18"
+      ],
+      "ownerRole": "Relationships-Fachrolle",
+      "completionEvidence": "Empfängerbezogene Entwürfe, Reihenfolge und Wiedervorlagevorschlag",
+      "approvalRequirement": "Ausdrückliche Sende-/Nachfassfreigabe erforderlich",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T17",
+      "title": "GeoAds/RetargetSet prüfen",
+      "domain": "Growth",
+      "offsetDays": -14,
+      "dependencies": [
+        "BYD-REL-T06",
+        "BYD-REL-T10",
+        "BYD-REL-T14",
+        "BYD-REL-T15"
+      ],
+      "inputIds": [
+        "REQ-03",
+        "REQ-09",
+        "REQ-10",
+        "REQ-11",
+        "REQ-12",
+        "REQ-18"
+      ],
+      "ownerRole": "Growth-Fachrolle",
+      "completionEvidence": "Entscheidungsfähiger Testplan mit Gesamtbudget, Laufzeit und Stoppkriterium",
+      "approvalRequirement": "Konkrete Ausgaben, Veröffentlichung und Datenübertragung separat",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T18",
+      "title": "Release-Readiness entscheiden",
+      "domain": "Alle sieben",
+      "offsetDays": -7,
+      "dependencies": [
+        "BYD-REL-T05",
+        "BYD-REL-T11",
+        "BYD-REL-T12",
+        "BYD-REL-T13"
+      ],
+      "inputIds": [
+        "REQ-04",
+        "REQ-05",
+        "REQ-06",
+        "REQ-07",
+        "REQ-08",
+        "REQ-11",
+        "REQ-18"
+      ],
+      "ownerRole": "Release-Koordination; Artist; BYD Lead",
+      "completionEvidence": "G2-Protokoll: bereit oder blockiert, genaue offene Entscheidung",
+      "approvalRequirement": "Menschliches Go/No-Go und jeweils nötige Einzelgenehmigungen",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T19",
+      "title": "Öffentliche Veröffentlichung prüfen",
+      "domain": "Music & Releases",
+      "offsetDays": 0,
+      "dependencies": [
+        "BYD-REL-T18"
+      ],
+      "inputIds": [
+        "REQ-08"
+      ],
+      "ownerRole": "Music Fachrolle; Artist",
+      "completionEvidence": "Plattformbezogener Live-/Fehlerstatus, korrekte Version und Credits soweit prüfbar",
+      "approvalRequirement": "Reine Prüfung; Änderungen separat",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T20",
+      "title": "Frühe Fehler und Messbarkeit prüfen",
+      "domain": "Music, Growth",
+      "offsetDays": 2,
+      "dependencies": [
+        "BYD-REL-T19"
+      ],
+      "inputIds": [
+        "REQ-08",
+        "REQ-09",
+        "REQ-10"
+      ],
+      "ownerRole": "Release-Koordination; zuständige Fachrollen",
+      "completionEvidence": "Technische Problemaufgaben und Kennzeichnung noch zu dünner Daten",
+      "approvalRequirement": "Interne Analyse; Korrekturaktion je nach Umfang",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T21",
+      "title": "Erste Lernschleife durchführen",
+      "domain": "Alle sieben",
+      "offsetDays": 7,
+      "dependencies": [
+        "BYD-REL-T20"
+      ],
+      "inputIds": [
+        "REQ-02",
+        "REQ-09",
+        "REQ-10",
+        "REQ-11",
+        "REQ-12",
+        "REQ-13",
+        "REQ-14",
+        "REQ-15",
+        "REQ-16",
+        "REQ-18"
+      ],
+      "ownerRole": "Release-Koordination; zuständige Fachrollen",
+      "completionEvidence": "Aktualisiertes Briefing, Heatmap soweit tragfähig, Top 3 für nächste Woche",
+      "approvalRequirement": "BYD Lead bestätigt wesentliche Richtungswechsel; Aktionen separat",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T22",
+      "title": "Kampagnenreview durchführen",
+      "domain": "Alle sieben",
+      "offsetDays": 28,
+      "dependencies": [
+        "BYD-REL-T21"
+      ],
+      "inputIds": [
+        "REQ-02",
+        "REQ-03",
+        "REQ-09",
+        "REQ-10",
+        "REQ-11",
+        "REQ-12",
+        "REQ-13",
+        "REQ-14",
+        "REQ-15",
+        "REQ-16",
+        "REQ-18"
+      ],
+      "ownerRole": "Release-Koordination; BYD Lead; Artist",
+      "completionEvidence": "Zielvergleich, sieben Domänen-Entscheidungen, aktualisierte Szenarien und Learnings",
+      "approvalRequirement": "BYD Lead und Artist entscheidet nächste Maßnahmen",
+      "canCarryForward": false
+    },
+    {
+      "id": "BYD-REL-T23",
+      "title": "Abrechnung abgleichen",
+      "domain": "Rights & Revenue",
+      "offsetDays": null,
+      "dependencies": [
+        "BYD-REL-T19"
+      ],
+      "inputIds": [
+        "REQ-03",
+        "REQ-12",
+        "REQ-14",
+        "REQ-16",
+        "REQ-17"
+      ],
+      "ownerRole": "Revenue Fachrolle; Artist",
+      "completionEvidence": "Getrennte Ist-/Zahlungsübersicht und offene Differenzen",
+      "approvalRequirement": "Interne Auswertung; Streitfall/Ansprache/Zahlung separat",
+      "canCarryForward": true
+    },
+    {
+      "id": "BYD-REL-T24",
+      "title": "Zyklus schließen und Learnings übergeben",
+      "domain": "Career",
+      "offsetDays": 35,
+      "dependencies": [
+        "BYD-REL-T22"
+      ],
+      "inputIds": [
+        "REQ-01",
+        "REQ-02",
+        "REQ-15",
+        "REQ-18"
+      ],
+      "ownerRole": "Release-Koordination; BYD Lead; Artist",
+      "completionEvidence": "G3-Abschluss, nächste strategische Konsequenz und verknüpfte offene Aufgaben",
+      "approvalRequirement": "Abschlussentscheidung; neue Datensatzanlage oder neuer Release separat",
+      "canCarryForward": false
+    }
+  ],
+  "processVersion": "2026-10-10-drive-first-v1"
+}

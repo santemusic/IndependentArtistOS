@@ -1,0 +1,541 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:independent-artist-os:workflow:v1",
+  "title": "Local planning state (review prototype)",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "templateVersion": {
+      "const": "1.0.0-draft"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "artist": {
+      "$ref": "#/$defs/artist"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "monthlyInputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/month"
+      }
+    },
+    "cycles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/cycle"
+      }
+    },
+    "carryForward": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/carry"
+      }
+    },
+    "audit": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/audit"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "templateVersion",
+    "revision",
+    "artist",
+    "sources",
+    "monthlyInputs",
+    "cycles",
+    "carryForward",
+    "audit"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "exception": {
+      "type": "object",
+      "properties": {
+        "inputId": {
+          "enum": [
+            "REQ-12",
+            "REQ-13",
+            "REQ-14"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewedBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "planVersion": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "inputId",
+        "reason",
+        "reviewedBy",
+        "planVersion"
+      ],
+      "additionalProperties": false
+    },
+    "artist": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "careerStage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "onboardingStatus": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "owner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "careerStage",
+        "onboardingStatus",
+        "owner"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputId": {
+          "pattern": "^REQ-(0[1-9]|1[0-8])$",
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "enum": [
+            "unverified",
+            "valid",
+            "stale",
+            "rejected"
+          ]
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verifiedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verifiedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expiresOn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "period": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "locator": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "inputId",
+        "version",
+        "state",
+        "reference"
+      ],
+      "additionalProperties": false
+    },
+    "month": {
+      "type": "object",
+      "properties": {
+        "period": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+        },
+        "state": {
+          "enum": [
+            "requested",
+            "partial",
+            "verified"
+          ]
+        },
+        "sourceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "verifiedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "period",
+        "state",
+        "sourceIds",
+        "verifiedBy"
+      ],
+      "additionalProperties": false
+    },
+    "cycle": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "releaseDate": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "planVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "closed": {
+          "type": "boolean"
+        },
+        "inputExceptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exception"
+          }
+        },
+        "sourceVersions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "reviews": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {
+            "$ref": "#/$defs/review"
+          }
+        },
+        "gates": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/gate"
+          }
+        },
+        "tasks": {
+          "type": "array",
+          "minItems": 24,
+          "maxItems": 24,
+          "items": {
+            "$ref": "#/$defs/task"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "releaseDate",
+        "planVersion",
+        "closed",
+        "inputExceptions",
+        "sourceVersions",
+        "reviews",
+        "gates",
+        "tasks"
+      ],
+      "additionalProperties": false
+    },
+    "review": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "enum": [
+            "career",
+            "music_releases",
+            "growth",
+            "content",
+            "live",
+            "relationships",
+            "rights_revenue"
+          ]
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "complete"
+          ]
+        },
+        "planVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "evidence": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "domain",
+        "state",
+        "planVersion",
+        "evidence",
+        "reviewer",
+        "decision"
+      ],
+      "additionalProperties": false
+    },
+    "gate": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "enum": [
+            "G0",
+            "G1",
+            "G2",
+            "G3"
+          ]
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "approved",
+            "rejected"
+          ]
+        },
+        "planVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "approvedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "approvedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "state",
+        "planVersion",
+        "approvedBy",
+        "approvedAt",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "task": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "planVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "enum": [
+            "todo",
+            "in_progress",
+            "done",
+            "not_applicable"
+          ]
+        },
+        "owner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notApplicableReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dueDate": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "planVersion",
+        "state",
+        "owner",
+        "evidence",
+        "notApplicableReason",
+        "dueDate"
+      ],
+      "additionalProperties": false
+    },
+    "carry": {
+      "type": "object",
+      "properties": {
+        "cycleId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nextReviewDate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "cycleId",
+        "taskId",
+        "owner",
+        "nextReviewDate",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "audit": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "at",
+        "by",
+        "reason",
+        "revision",
+        "scope"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
+
