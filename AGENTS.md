@@ -2,7 +2,7 @@
 
 ## Scope
 
-This repository owns the MCP runtime and Render deployment configuration. BYD2 owns the product UI, Supabase schema and Edge Functions. Do not invent backend RPC contracts or copy artist business data into this repository.
+This repository contains the legacy MCP runtime and Render deployment configuration. The former BYD2 Lovable project and Supabase backend are retired; references to them describe historical integrations, not current production services. Do not invent replacement backend RPC contracts or copy artist business data into this repository.
 
 ## Working contract
 
