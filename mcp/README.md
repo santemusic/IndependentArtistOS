@@ -1,4 +1,6 @@
-# Artist OS MCP server
+# Artist OS MCP server (legacy integration runtime)
+
+> **Retired backend notice (October 2026):** The former BYD2 Lovable project and Supabase backend no longer exist as live integrations. The OAuth bridge, Supabase adapter, queued worker, and Render configuration below document **legacy code**, not a currently functioning service. Do not deploy or operate this code expecting the former backend to be available. Removing `mcp/src/adapters/supabase.ts` requires refactoring its imports, tools, OAuth paths, worker and tests first. The proposed Drive-first process in PR #6 does not yet provide an automated Sheets replacement.
 
 Node.js 22 / TypeScript service exposing Streamable HTTP at `/mcp` and an embedded dashboard. The root `/` endpoint is a process liveness response, not proof that the backend or AI provider is healthy.
 
