@@ -10,9 +10,13 @@ Governed MCP runtime connecting ChatGPT to artist workspaces in the BYD Second B
 - [`system/PERMISSIONS.md`](system/PERMISSIONS.md): human authority boundaries.
 - [`docs/GO_LIVE.md`](docs/GO_LIVE.md): release checks and outstanding production work.
 
-The product UI, Supabase functions and database schema belong to the [BYD2 Lovable project](https://lovable.dev/projects/7becdc68-b0ff-45d3-ba4b-d86a42e79c29). They are not managed by this repository. Supabase is the canonical store for artist context, memberships, tasks and approvals; model providers supply compute.
+## Current integration status
 
-Each primary MCP connection is bound to one user and one artist workspace. Multiple artists share the runtime, with authorization enforced by the backend.
+The former BYD2 Lovable project and Supabase backend are retired and must not be treated as available operational dependencies. The existing `mcp/` code still contains Supabase authentication, database gateway, and queue-worker integrations; these are **legacy implementation dependencies**, not a verified live connection. Do not deploy this runtime as a working Artist OS without replacing or explicitly retiring those code paths and validating the replacement.
+
+The proposed Drive-first team workflow is being reviewed in [pull request #6](https://github.com/santemusic/IndependentArtistOS/pull/6). Its Google Sheets LIVE link and templates currently describe a manual operating process, not an automated MCP-to-Sheets integration.
+
+The legacy MCP implementation was designed to bind connections to user/workspace identity and enforce authorization through the former backend; this is not a claim of current operational availability.
 
 ## Development
 
