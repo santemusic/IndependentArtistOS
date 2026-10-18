@@ -1,5 +1,4 @@
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
 import {
   createCipheriv,
   createDecipheriv,
@@ -9,18 +8,11 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
-import {
-  registerAppResource,
-  registerAppTool,
-  RESOURCE_MIME_TYPE,
-} from "@modelcontextprotocol/ext-apps/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { ServerDatabase, startAiWorker } from "./worker.js";
 import { checkToolScope, validScopes, validPkceVerifier } from "./auth.js";
 import { NotionAdapter } from "./adapters/notion.js";
-import { SupabaseAdapter, type SupabaseConnection } from "./adapters/supabase.js";
 import {
   actionFingerprint,
   assertExternalActionMayBeStaged,
@@ -28,17 +20,22 @@ import {
   getRuntimeControl,
 } from "./governance.js";
 
-const dashboardHtml = readFileSync(new URL("../public/dashboard.html", import.meta.url), "utf8");
 const MCP_PATH = "/mcp";
 const port = Number(process.env.PORT ?? process.env.MUSIC_OS_PORT ?? 8787);
 const publicOrigin = (process.env.MCP_PUBLIC_URL ?? "https://independent-artist-os-mcp.onrender.com").replace(/\/$/, "");
 const resourceId = `${publicOrigin}${MCP_PATH}`;
 const oauthIssuer = publicOrigin;
-const serverDatabase = new ServerDatabase();
-const aiWorker = startAiWorker(serverDatabase);
-const locallyConsumedOauthCodes = new Set<string>();
+const locallyConsumedOauthCodes = new Map<string, number>();
 
-const artistId = () => process.env.MUSIC_OS_ARTIST_ID ?? "default";
+function consumeCodeOnce(hash: string, expiresAt: number): boolean {
+  const now = Date.now();
+  for (const [key, expiry] of locallyConsumedOauthCodes) {
+    if (expiry <= now) locallyConsumedOauthCodes.delete(key);
+  }
+  if (locallyConsumedOauthCodes.has(hash)) return false;
+  locallyConsumedOauthCodes.set(hash, expiresAt);
+  return true;
+}
 
 function asText(value: unknown) {
   return {
@@ -153,44 +150,17 @@ function decryptConnection(value: string | undefined): Record<string, any> | nul
   }
 }
 
+function isNotionConnection(value: unknown): value is string {
+  const connection = typeof value === "string" ? decryptConnection(value) : null;
+  return connection?.provider === "notion" && typeof connection.token === "string" && Boolean(connection.workspaceId);
+}
+
 function notionOauthConfigured(): boolean {
   return Boolean(process.env.NOTION_OAUTH_CLIENT_ID && process.env.NOTION_OAUTH_CLIENT_SECRET);
 }
 
 function notionRedirectUri(): string {
   return `${publicOrigin}/oauth/notion/callback`;
-}
-
-function supabaseOauthConfigured(): boolean {
-  return Boolean(process.env.SUPABASE_URL && process.env.ARTIST_OS_APP_URL);
-}
-
-function artistOsAppUrl(): string {
-  const value = process.env.ARTIST_OS_APP_URL;
-  if (!value) throw new Error("Missing required environment variable: ARTIST_OS_APP_URL");
-  return value.replace(/\/$/, "");
-}
-
-async function redeemArtistOsTicket(ticket: string, state: string): Promise<SupabaseConnection> {
-  const base = (process.env.SUPABASE_URL ?? "").replace(/\/$/, "");
-  if (!base) throw new Error("Supabase OAuth bridge is not configured.");
-  const response = await fetch(`${base}/functions/v1/mcp-connection-ticket`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ action: "redeem", ticket, state }),
-    signal: AbortSignal.timeout(15000),
-  });
-  const body: any = await response.json().catch(() => ({}));
-  if (!response.ok || !body?.connection_token || !body?.workspace_id || !body?.user_id) {
-    throw new Error("Artist OS connection ticket is invalid or expired.");
-  }
-  return {
-    connectionToken: body.connection_token,
-    userId: body.user_id,
-    workspaceId: body.workspace_id,
-    role: body.role,
-    connectionExpiresAt: body.connection_expires_at,
-  };
 }
 
 function writeJson(res: any, status: number, body: unknown, extraHeaders: Record<string, string> = {}) {
@@ -208,143 +178,31 @@ async function readBody(req: any): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function authorizationPage(params: URLSearchParams, error?: string): string {
-  const hidden = [
-    "response_type",
-    "client_id",
-    "redirect_uri",
-    "code_challenge",
-    "code_challenge_method",
-    "state",
-    "scope",
-    "resource",
-  ]
-    .map((name) => {
-      const value = params.get(name) ?? "";
-      return `<input type="hidden" name="${name}" value="${value.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}">`;
-    })
-    .join("");
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Authorize Independent Artist OS</title>
-  <style>
-    body{font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:8vh auto;padding:24px;color:#171717}
-    .card{border:1px solid #ddd;border-radius:16px;padding:24px}
-    input{width:100%;box-sizing:border-box;padding:12px;margin:12px 0 16px;border:1px solid #bbb;border-radius:10px}
-    button{padding:12px 18px;border:0;border-radius:10px;background:#111;color:#fff;font-weight:600;cursor:pointer}
-    .muted{color:#666}.error{color:#b42318}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Independent Artist OS</h1>
-    <p>Authorize ChatGPT to access your private Artist OS MCP server.</p>
-    <p class="muted">Use the value stored in Render as <code>MCP_AUTH_TOKEN</code>. It is never sent to ChatGPT.</p>
-    ${error ? `<p class="error">${error}</p>` : ""}
-    <form method="post" action="/oauth/authorize">
-      ${hidden}
-      <label for="access_key">Artist OS access key</label>
-      <input id="access_key" name="access_key" type="password" autocomplete="current-password" required>
-      <button type="submit">Authorize ChatGPT</button>
-    </form>
-  </div>
-</body>
-</html>`;
-}
-
 function createMusicOsServer(authPayload: Record<string, any> = {}) {
   const connection = decryptConnection(authPayload.conn);
-  const isSupabase = connection?.provider === "supabase_gateway";
-  if (supabaseOauthConfigured() && (!isSupabase || !connection?.workspaceId || !connection?.userId)) throw new Error("Invalid connection");
-  const adapter = isSupabase
-    ? new SupabaseAdapter(connection as SupabaseConnection)
-    : connection?.token
-      ? new NotionAdapter({ token: connection.token })
-      : new NotionAdapter();
-  const currentArtistId = () =>
-    isSupabase
-      ? String(connection?.workspaceId ?? "")
-      : (typeof authPayload.sub === "string" && authPayload.sub) ||
-        process.env.MUSIC_OS_ARTIST_ID ||
-        "default";
+  if (connection?.provider !== "notion" || typeof connection?.token !== "string" || !connection?.workspaceId) {
+    throw new Error("A Notion OAuth connection is required");
+  }
+  const adapter = new NotionAdapter({ token: connection.token });
+  // Each OAuth connection maps to exactly one Notion workspace/artist OS.
+  const currentArtistId = () => String(connection.workspaceId);
   const server = new McpServer({
     name: "independent-artist-os",
     version: "0.3.0",
   });
 
-  registerAppResource(
-    server,
-    "artist-os-dashboard",
-    "ui://artist-os/dashboard.html",
-    {},
-    async () => ({
-      contents: [
-        {
-          uri: "ui://artist-os/dashboard.html",
-          mimeType: RESOURCE_MIME_TYPE,
-          text: dashboardHtml,
-          _meta: {
-            ui: { prefersBorder: true },
-            "openai/widgetDescription":
-              "Artist OS management dashboard with 90-day goal, weekly priorities, bottleneck and open tasks.",
-          },
-        },
-      ],
-    }),
-  );
-
   server.tool(
     "get_artist_context",
-    "Read the live Artist Master Context for the current artist.",
+    "Read the connected Notion artist's master context.",
     {},
     async () => asText(await adapter.getArtistContext(currentArtistId())),
   );
 
-  registerAppTool(
-    server,
+  server.tool(
     "get_operating_snapshot",
-    {
-      title: "Open Artist OS",
-      description:
-        "Read the artist's current management snapshot: Artist Context, active projects, open tasks and runtime controls.",
-      inputSchema: {},
-      outputSchema: {
-        snapshot: z.object({
-          artist: z.object({
-            artistId: z.string(),
-            artistName: z.string().optional(),
-            stage: z.string().optional(),
-            twelveMonthObjective: z.string().optional(),
-            ninetyDayGoal: z.string().optional(),
-            weeklyTop3: z.array(z.string()),
-            currentBottleneck: z.string().optional(),
-            nextImportantDate: z.string().optional(),
-            source: z.string(),
-            rawText: z.string().optional(),
-          }),
-          activeProjects: z.array(z.any()),
-          openTasks: z.array(z.any()),
-          runtime: z.object({
-            mode: z.enum(["PAUSED", "SUPERVISED", "ACTIVE"]),
-            externalActions: z.enum(["BLOCKED", "APPROVAL_ONLY", "ALLOWED"]),
-          }),
-        }),
-      },
-      _meta: {
-        ui: { resourceUri: "ui://artist-os/dashboard.html" },
-      },
-    },
-    async () => {
-      const snapshot = await adapter.getOperatingSnapshot(currentArtistId());
-      return {
-        content: [{ type: "text" as const, text: "Opened the Artist OS management snapshot." }],
-        structuredContent: { snapshot },
-      };
-    },
+    "Read artist context, projects and tasks from the connected Notion workspace.",
+    {},
+    async () => asText(await adapter.getOperatingSnapshot(currentArtistId())),
   );
 
   server.tool(
@@ -432,8 +290,8 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
   );
 
 
-  if (!isSupabase) {
-    const notionAdapter = adapter as NotionAdapter;
+  {
+    const notionAdapter = adapter;
     server.tool(
     "get_workflow",
     "Read one active Master Workflow definition by workflow ID.",
@@ -549,277 +407,11 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
 
   }
 
-  if (isSupabase) {
-    const supabase = adapter as SupabaseAdapter;
-
-    server.tool(
-      "run_ai_ceo",
-      "Queue a governed BYD AI CEO request. Use get_ai_request to read status/results. Consequential actions become approval requests and never execute externally.",
-      {
-        intent: z.enum(["help_me_grow", "weekly", "review_progress", "plan_release"]).default("help_me_grow"),
-        userMessage: z.string().max(4000).optional(),
-      },
-      async ({ intent, userMessage }) => {
-        assertInternalWriteAllowed();
-
-        if (!aiWorker.status().enabled) throw new Error("AI worker is not configured");
-        return asText(await supabase.beginAiRequest(intent, userMessage));
-      },
-    );
-
-    server.tool(
-      "get_ai_request",
-      "Read status and validated results of a queued CEO request in the connected workspace.",
-      { requestId: z.string().uuid() },
-      async ({ requestId }) => asText(await supabase.getAiRequest(requestId)),
-    );
-
-    server.tool(
-      "get_recent_changes",
-      "Read incremental Second Brain changes after a workspace version cursor.",
-      {
-        afterVersion: z.number().int().nonnegative().default(0),
-        limit: z.number().int().min(1).max(200).default(50),
-      },
-      async ({ afterVersion, limit }) => asText(await supabase.getRecentChanges(afterVersion, limit)),
-    );
-
-    server.tool(
-      "list_tasks",
-      "List tasks for the connected Artist OS workspace.",
-      {
-        includeDone: z.boolean().default(false),
-      },
-      async ({ includeDone }) => asText(await supabase.listTasks(currentArtistId(), includeDone)),
-    );
-
-    server.tool(
-      "search_contacts",
-      "Search the connected Artist OS CRM by name, email, city or country.",
-      {
-        query: z.string().default(""),
-        limit: z.number().int().min(1).max(100).default(25),
-      },
-      async ({ query, limit }) => asText(await supabase.searchContacts(query, limit)),
-    );
-
-    server.tool(
-      "get_contact",
-      "Read one CRM contact with roles, organizations and recent interactions.",
-      {
-        contactId: z.string().uuid(),
-      },
-      async ({ contactId }) => asText(await supabase.getContact(contactId)),
-    );
-
-    server.tool(
-      "create_contact",
-      "Create a CRM contact in the connected Artist OS workspace. This is an internal Second Brain write only.",
-      {
-        display_name: z.string().min(1),
-        first_name: z.string().optional(),
-        last_name: z.string().optional(),
-        email_primary: z.string().email().optional(),
-        email_secondary: z.string().email().optional(),
-        phone_primary: z.string().optional(),
-        phone_secondary: z.string().optional(),
-        city: z.string().optional(),
-        region: z.string().optional(),
-        country: z.string().optional(),
-        language: z.string().optional(),
-        instagram_or_social: z.string().optional(),
-        website: z.string().optional(),
-        preferred_channel: z.string().optional(),
-        notes: z.string().optional(),
-        source_reference: z.string().max(200).optional(),
-        last_contact_at: z.string().optional(),
-        next_follow_up_at: z.string().optional(),
-      },
-      async (input) => {
-        assertInternalWriteAllowed();
-        return asText(await supabase.createContact(input));
-      },
-    );
-
-    server.tool(
-      "update_contact",
-      "Update safe CRM fields for an existing contact in the connected workspace.",
-      {
-        contactId: z.string().uuid(),
-        display_name: z.string().min(1).optional(),
-        first_name: z.string().optional(),
-        last_name: z.string().optional(),
-        email_primary: z.string().email().nullable().optional(),
-        email_secondary: z.string().email().nullable().optional(),
-        phone_primary: z.string().nullable().optional(),
-        phone_secondary: z.string().nullable().optional(),
-        city: z.string().nullable().optional(),
-        region: z.string().nullable().optional(),
-        country: z.string().nullable().optional(),
-        language: z.string().nullable().optional(),
-        instagram_or_social: z.string().nullable().optional(),
-        website: z.string().nullable().optional(),
-        preferred_channel: z.string().nullable().optional(),
-        notes: z.string().nullable().optional(),
-        last_contact_at: z.string().nullable().optional(),
-        next_follow_up_at: z.string().nullable().optional(),
-        archived_at: z.string().nullable().optional(),
-      },
-      async ({ contactId, ...payload }) => {
-        assertInternalWriteAllowed();
-        return asText(await supabase.updateContact(contactId, payload));
-      },
-    );
-
-    server.tool(
-      "log_interaction",
-      "Log an internal CRM interaction and optional next action. This does not send a message.",
-      {
-        contact_id: z.string().uuid().optional(),
-        organization_id: z.string().uuid().optional(),
-        interaction_type: z.enum(["email","dm","call","meeting","show","feedback","support","note","other"]).default("note"),
-        occurred_at: z.string().optional(),
-        summary: z.string().min(1),
-        outcome: z.string().optional(),
-        next_action: z.string().optional(),
-        next_action_due_at: z.string().optional(),
-        project_id: z.string().uuid().optional(),
-        task_id: z.string().uuid().optional(),
-        source_reference: z.string().max(200).optional(),
-      },
-      async (input) => {
-        assertInternalWriteAllowed();
-        return asText(await supabase.logInteraction(input));
-      },
-    );
-
-    server.tool(
-      "search_opportunities",
-      "Search CRM opportunities for the connected Artist OS workspace.",
-      {
-        query: z.string().default(""),
-        status: z.string().default("open"),
-        limit: z.number().int().min(1).max(100).default(25),
-      },
-      async ({ query, status, limit }) => asText(await supabase.searchOpportunities(query, status, limit)),
-    );
-
-    server.tool(
-      "create_opportunity",
-      "Create an internal CRM opportunity. This never performs the external opportunity action.",
-      {
-        opportunity_type: z.enum(["booking","pr","radio","dj_support","collaboration","brand","label","sync","press","other"]),
-        title: z.string().min(1),
-        contact_id: z.string().uuid().optional(),
-        organization_id: z.string().uuid().optional(),
-        stage: z.string().optional(),
-        status: z.enum(["open","won","lost","on_hold"]).optional(),
-        priority: z.enum(["A","B","C","Unscored"]).optional(),
-        market_city: z.string().optional(),
-        market_country: z.string().optional(),
-        value_amount: z.number().optional(),
-        value_currency: z.string().optional(),
-        date_window_start: z.string().optional(),
-        date_window_end: z.string().optional(),
-        next_action: z.string().optional(),
-        next_action_due_at: z.string().optional(),
-        project_id: z.string().uuid().optional(),
-        notes: z.string().optional(),
-        source_reference: z.string().max(200).optional(),
-      },
-      async (input) => {
-        assertInternalWriteAllowed();
-        return asText(await supabase.createOpportunity(input));
-      },
-    );
-
-    server.tool(
-      "update_weekly_priorities",
-      "Replace the connected artist's weekly top priorities (maximum three).",
-      {
-        priorities: z.array(z.string().min(1)).max(3),
-      },
-      async ({ priorities }) => {
-        assertInternalWriteAllowed();
-        return asText(await supabase.updateWeeklyPriorities(priorities));
-      },
-    );
-
-    server.tool(
-      "get_discovery_status",
-      "Read discovery/onboarding completion counts for the connected artist.",
-      {},
-      async () => asText(await supabase.getDiscoveryStatus()),
-    );
-  }
-
-  if (isSupabase) {
-    const supabase = adapter as SupabaseAdapter;
-
-    server.tool(
-      "get_second_brain_context",
-      "Read the normalized BYD Second Brain context for the connected artist, including positioning, facts, goals, tasks, approvals, learnings, decisions, runtime control and AI provider preference.",
-      {},
-      async () => asText(await supabase.getSecondBrainContext()),
-    );
-
-    server.tool(
-      "get_system_health",
-      "Read operational health for the connected artist workspace, including runtime state, queue counts, knowledge coverage and provider connection metadata.",
-      {},
-      async () => asText(await supabase.getSystemHealth()),
-    );
-
-    server.tool(
-      "get_positioning_summary",
-      "Read the latest AI Artist Positioning identity and strategic analysis summary for the connected artist.",
-      {},
-      async () => asText(await supabase.getPositioningSummary()),
-    );
-
-    server.tool(
-      "get_research_status",
-      "Read the latest AI Artist Positioning research run status, source counts, conflicts and missing critical input counts.",
-      {},
-      async () => asText(await supabase.getResearchStatus()),
-    );
-
-    server.tool(
-      "get_research_findings",
-      "Read source-backed AI Artist Positioning findings, optionally filtered by research domain.",
-      {
-        domain: z.string().max(40).optional(),
-      },
-      async ({ domain }) => asText(await supabase.getResearchFindings(domain)),
-    );
-
-    server.tool(
-      "get_onboarding_prefill_summary",
-      "Read AI Artist Positioning prefill coverage for the artist's active delivery package: auto-researched, AI suggestions, artist-only input and conflicts.",
-      {},
-      async () => asText(await supabase.getOnboardingPrefillSummary()),
-    );
-
-    server.tool(
-      "list_ai_agents",
-      "List active BYD AI agents and their operating domains and permissions.",
-      {},
-      async () => asText(await supabase.listAiAgents()),
-    );
-
-    server.tool(
-      "list_workflows",
-      "List active BYD workflow definitions, triggers, routing domains and approval policies.",
-      {},
-      async () => asText(await supabase.listWorkflows()),
-    );
-  }
-
   server.tool(
     "get_runtime_control",
     "Read current runtime mode and external-action policy.",
     {},
-    async () => asText(isSupabase ? await (adapter as SupabaseAdapter).getRuntimeControl() : getRuntimeControl()),
+    async () => asText(getRuntimeControl()),
   );
 
   return server;
@@ -829,7 +421,7 @@ const httpServer = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
   if (req.method === "GET" && url.pathname === "/health") {
-    writeJson(res, 200, { process: "ready", worker: aiWorker.status() }); return;
+    writeJson(res, 200, { process: "ready", backend: "notion" }); return;
   }
   if (req.method === "GET" && url.pathname === "/") {
     res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
@@ -913,21 +505,6 @@ const httpServer = createServer(async (req, res) => {
       return;
     }
 
-    if (supabaseOauthConfigured()) {
-      const now = Math.floor(Date.now() / 1000);
-      const state = signPayload({
-        kind: "supabase_state",
-        request: Object.fromEntries(url.searchParams.entries()),
-        iat: now,
-        exp: now + 600,
-      });
-      const target = new URL(artistOsAppUrl() + "/mcp-connect");
-      target.searchParams.set("state", state);
-      res.writeHead(302, { location: target.toString(), "cache-control": "no-store" });
-      res.end();
-      return;
-    }
-
     if (notionOauthConfigured()) {
       const now = Math.floor(Date.now() / 1000);
       const state = signPayload({
@@ -947,76 +524,7 @@ const httpServer = createServer(async (req, res) => {
       return;
     }
 
-    res.writeHead(200, {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-    });
-    res.end(authorizationPage(url.searchParams));
-    return;
-  }
-
-  if (req.method === "POST" && url.pathname === "/oauth/supabase/callback") {
-    try {
-      const body = new URLSearchParams(await readBody(req));
-      const state = body.get("state") ?? "";
-      const ticket = body.get("ticket") ?? "";
-      const statePayload = verifySignedPayload(state);
-      const request = statePayload?.kind === "supabase_state" ? statePayload.request : null;
-      if (!request || typeof request !== "object" || !ticket || !supabaseOauthConfigured()) {
-        res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
-        res.end("Invalid Artist OS connection callback.");
-        return;
-      }
-
-      const connection = await redeemArtistOsTicket(ticket, state);
-      const params = new URLSearchParams(
-        Object.entries(request).map(([key, value]) => [key, String(value ?? "")]),
-      );
-      const clientId = params.get("client_id") ?? "";
-      const redirectUri = params.get("redirect_uri") ?? "";
-      const codeChallenge = params.get("code_challenge") ?? "";
-      const stateBack = params.get("state") ?? "";
-      const scope = params.get("scope") ?? "artist_os:read artist_os:write";
-      const resource = params.get("resource") ?? "";
-      if (
-        params.get("response_type") !== "code" ||
-        params.get("code_challenge_method") !== "S256" ||
-        !codeChallenge ||
-        !verifyClientId(clientId, redirectUri) ||
-        !isTrustedRedirectUri(redirectUri) ||
-        resource !== resourceId
-      ) {
-        res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
-        res.end("Invalid original ChatGPT OAuth request.");
-        return;
-      }
-
-      const now = Math.floor(Date.now() / 1000);
-      const encrypted = encryptConnection({ provider: "supabase_gateway", ...connection });
-      const authCode = signPayload({
-        kind: "auth_code",
-        nonce: randomUUID(),
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        code_challenge: codeChallenge,
-        resource,
-        scope,
-        sub: connection.userId,
-        conn: encrypted,
-        iat: now,
-        exp: now + 300,
-      });
-
-      const target = new URL(redirectUri);
-      target.searchParams.set("code", authCode);
-      if (stateBack) target.searchParams.set("state", stateBack);
-      res.writeHead(302, { location: target.toString(), "cache-control": "no-store" });
-      res.end();
-    } catch (error) {
-      console.error("Artist OS connection callback failed");
-      res.writeHead(401, { "content-type": "text/plain; charset=utf-8" });
-      res.end("Could not connect this Artist OS workspace.");
-    }
+    writeJson(res, 503, { error: "notion_oauth_not_configured" });
     return;
   }
 
@@ -1087,6 +595,7 @@ const httpServer = createServer(async (req, res) => {
 
     const now = Math.floor(Date.now() / 1000);
     const connection = encryptConnection({
+      provider: "notion",
       token: notion.access_token,
       workspaceId: notion.workspace_id,
       workspaceName: notion.workspace_name,
@@ -1115,61 +624,6 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "POST" && url.pathname === "/oauth/authorize") {
-    const body = new URLSearchParams(await readBody(req));
-    const accessKey = body.get("access_key") ?? "";
-    const expected = secret();
-    const a = Buffer.from(accessKey);
-    const b = Buffer.from(expected);
-    const validKey = a.length === b.length && timingSafeEqual(a, b);
-
-    const clientId = body.get("client_id") ?? "";
-    const redirectUri = body.get("redirect_uri") ?? "";
-    const codeChallenge = body.get("code_challenge") ?? "";
-    const state = body.get("state") ?? "";
-    const scope = body.get("scope") ?? "artist_os:read artist_os:write";
-    const resource = body.get("resource") ?? "";
-
-    if (
-      !validKey ||
-      !validScopes(scope) ||
-      !/^[A-Za-z0-9_-]{43}$/.test(codeChallenge) ||
-      body.get("response_type") !== "code" ||
-      body.get("code_challenge_method") !== "S256" ||
-      !verifyClientId(clientId, redirectUri) ||
-      !isTrustedRedirectUri(redirectUri) ||
-      resource !== resourceId
-    ) {
-      res.writeHead(401, {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-      });
-      res.end(authorizationPage(body, "Invalid access key or OAuth request."));
-      return;
-    }
-
-    const now = Math.floor(Date.now() / 1000);
-    const nonce = randomUUID();
-    const code = signPayload({
-      kind: "auth_code",
-      nonce,
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      code_challenge: codeChallenge,
-      resource,
-      scope,
-      iat: now,
-      exp: now + 300,
-    });
-
-    const target = new URL(redirectUri);
-    target.searchParams.set("code", code);
-    if (state) target.searchParams.set("state", state);
-    res.writeHead(302, { location: target.toString(), "cache-control": "no-store" });
-    res.end();
-    return;
-  }
-
   if (req.method === "POST" && url.pathname === "/oauth/token") {
     const body = new URLSearchParams(await readBody(req));
     const grantType = body.get("grant_type");
@@ -1187,6 +641,7 @@ const httpServer = createServer(async (req, res) => {
         typeof payload.nonce !== "string" ||
         payload.resource !== resourceId ||
         !validScopes(payload.scope) ||
+        !isNotionConnection(payload.conn) ||
         !validPkceVerifier(codeVerifier) ||
         payload.client_id !== clientId ||
         payload.redirect_uri !== redirectUri ||
@@ -1202,30 +657,18 @@ const httpServer = createServer(async (req, res) => {
         return;
       }
 
+      // Without shared durable storage, OAuth is deliberately single-instance only.
       const codeHash = createHash("sha256").update(code).digest("hex");
-      try {
-        const consumed = await serverDatabase.rpc<boolean>("consume_mcp_oauth_code", {
-          _code_hash: codeHash,
-          _expires_at: new Date(payload.exp * 1000).toISOString(),
-        });
-        if (!consumed) { writeJson(res, 400, { error: "invalid_grant" }); return; }
-      } catch (error) {
-        // Single-instance availability fallback: preserve one-time code semantics
-        // when privileged Supabase auth is temporarily unavailable.
-        if (locallyConsumedOauthCodes.has(codeHash)) {
-          writeJson(res, 400, { error: "invalid_grant" });
-          return;
-        }
-        locallyConsumedOauthCodes.add(codeHash);
-        setTimeout(() => locallyConsumedOauthCodes.delete(codeHash), 10 * 60 * 1000).unref();
-        console.warn("OAuth code replay store degraded to local process");
+      if (!consumeCodeOnce(codeHash, payload.exp * 1000)) {
+        writeJson(res, 400, { error: "invalid_grant" });
+        return;
       }
       const now = Math.floor(Date.now() / 1000);
       const accessToken = signPayload({
         kind: "access",
         aud: resourceId,
         scope: payload.scope,
-        sub: payload.sub ?? "artist-os-owner",
+        sub: payload.sub,
         conn: payload.conn,
         iat: now,
         exp: now + 3600,
@@ -1235,7 +678,7 @@ const httpServer = createServer(async (req, res) => {
         client_id: clientId,
         aud: resourceId,
         scope: payload.scope,
-        sub: payload.sub ?? "artist-os-owner",
+        sub: payload.sub,
         conn: payload.conn,
         iat: now,
         exp: now + 60 * 60 * 24 * 30,
@@ -1253,7 +696,7 @@ const httpServer = createServer(async (req, res) => {
     if (grantType === "refresh_token") {
       const refreshToken = body.get("refresh_token") ?? "";
       const payload = verifySignedPayload(refreshToken);
-      if (!payload || payload.kind !== "refresh" || payload.aud !== resourceId || payload.client_id !== body.get("client_id") || !verifyClientId(payload.client_id) || !validScopes(payload.scope)) {
+      if (!payload || payload.kind !== "refresh" || payload.aud !== resourceId || payload.client_id !== body.get("client_id") || !verifyClientId(payload.client_id) || !validScopes(payload.scope) || !isNotionConnection(payload.conn)) {
         writeJson(res, 400, { error: "invalid_grant" });
         return;
       }
@@ -1295,7 +738,7 @@ const httpServer = createServer(async (req, res) => {
 
   const allowedMethods = new Set(["POST", "GET", "DELETE"]);
   if (url.pathname === MCP_PATH && req.method && allowedMethods.has(req.method)) {
-    if (!process.env.MCP_AUTH_TOKEN) {
+    if (!process.env.MCP_AUTH_TOKEN || !notionOauthConfigured()) {
       writeJson(res, 503, { error: "MCP authentication is not configured" });
       return;
     }
@@ -1357,12 +800,7 @@ const httpServer = createServer(async (req, res) => {
 
 httpServer.listen(port, () => {
   console.log(`Independent Artist OS MCP listening on http://localhost:${port}${MCP_PATH}`);
-  console.log("OAuth config status", {
-    supabaseUrl: Boolean(process.env.SUPABASE_URL),
-    artistOsAppUrl: Boolean(process.env.ARTIST_OS_APP_URL),
-    notionClientId: Boolean(process.env.NOTION_OAUTH_CLIENT_ID),
-    notionClientSecret: Boolean(process.env.NOTION_OAUTH_CLIENT_SECRET),
-  });
+  console.log("Notion OAuth configured:", notionOauthConfigured());
 });
 
-process.on("SIGTERM", () => { aiWorker.stop(); httpServer.close(); });
+process.on("SIGTERM", () => { httpServer.close(); });
