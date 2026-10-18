@@ -184,7 +184,8 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
   if (connection?.provider !== "notion" || typeof connection?.token !== "string" || !connection?.workspaceId) {
     throw new Error("A Notion OAuth connection is required");
   }
-  const shared = Boolean(process.env.NOTION_ARTISTS_DATABASE_ID && process.env.NOTION_TASKS_DATABASE_ID);
+  const shared = Boolean(process.env.NOTION_ARTISTS_DATABASE_ID || process.env.NOTION_TASKS_DATABASE_ID || process.env.NOTION_ARTIST_ACL_JSON);
+  if (shared && (!process.env.NOTION_ARTISTS_DATABASE_ID || !process.env.NOTION_TASKS_DATABASE_ID || !process.env.NOTION_ARTIST_ACL_JSON)) throw new Error("Shared-workspace configuration is incomplete.");
   const allowed = shared ? allowedArtistsForOwner(String(connection.ownerId ?? ""), String(connection.workspaceId)) : [];
   const adapter = shared
     ? new SharedNotionArtistAdapter({
