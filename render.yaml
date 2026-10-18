@@ -3,7 +3,7 @@ services:
     name: independent-artist-os-mcp
     runtime: node
     rootDir: mcp
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci && npm test && npm run typecheck && npm run build
     startCommand: npm start
     healthCheckPath: /health
     autoDeployTrigger: off
@@ -12,17 +12,9 @@ services:
         sync: false
       - key: MCP_PUBLIC_URL
         sync: false
-      - key: SUPABASE_URL
+      - key: NOTION_OAUTH_CLIENT_ID
         sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: SUPABASE_ANON_KEY
-        sync: false
-      - key: ARTIST_OS_APP_URL
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: BYD_OPENAI_MODEL
+      - key: NOTION_OAUTH_CLIENT_SECRET
         sync: false
       - key: MUSIC_OS_RUNTIME_MODE
         value: SUPERVISED
