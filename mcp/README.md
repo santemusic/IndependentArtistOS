@@ -12,7 +12,7 @@ This Node.js 22 / TypeScript server exposes Streamable HTTP MCP at `/mcp`. It ha
 
 The connector auto-discovers the `Artist Master Context` (or `Command Center`) page and the `Projects`, `Tasks`, `Automation Runs`, `Workflow Registry` and `Workflow Runs` databases, using the authenticated workspace's Notion visibility. Give resources unambiguous names. Missing or ambiguous required resources cause the connection's operations to fail closed.
 
-One Notion workspace is treated as one artist tenant. Multiple artists within a single Notion workspace, workspace-level shared databases, or multiple deployments sharing an in-memory OAuth code replay store are **not** supported as isolated artist tenants. Separate Notion workspaces are required for actual isolation. Existing BYD/Lovable/Supabase connections need to be removed from ChatGPT and reauthorized through Notion.
+One Notion workspace is treated as one artist tenant. Multiple artists within a single Notion workspace, workspace-level shared databases, or multiple deployments sharing an in-memory OAuth code replay store are **not** supported as isolated artist tenants. Separate Notion workspaces are required for actual isolation. Legacy connections need to be removed from ChatGPT and reauthorized through Notion.
 
 ## Available operations
 
@@ -29,7 +29,7 @@ Read artist context/snapshot, get runtime control, create/update internal tasks,
 | `MUSIC_OS_RUNTIME_MODE` | `SUPERVISED` by default |
 | `MUSIC_OS_EXTERNAL_ACTIONS` | `APPROVAL_ONLY` by default |
 
-Never set `NOTION_TOKEN` as a global runtime fallback in a multi-artist deployment. No Supabase or Lovable variables are used. `npm start` reads the process environment; it does not automatically load .env files.
+Never set `NOTION_TOKEN` as a global runtime fallback in a multi-artist deployment. No additional backend variables are used. `npm start` reads the process environment; it does not automatically load .env files.
 
 ## Run checks
 
