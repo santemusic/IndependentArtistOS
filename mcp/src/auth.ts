@@ -1,6 +1,6 @@
 const scopes = new Set(["artist_os:read", "artist_os:write", "offline_access"]);
 const reads = new Set([
-  "get_artist_context", "get_operating_snapshot", "get_runtime_control",
+  "list_artists", "get_artist_context", "get_operating_snapshot", "get_runtime_control",
   "get_workflow", "get_workflow_run", "route_workflow",
 ]);
 const writes = new Set([
