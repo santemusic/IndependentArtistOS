@@ -1,6 +1,6 @@
 # Independent Artist OS — Notion MCP connector
 
-A standalone MCP connector for **multiple independent artists**, each using an authorized Notion workspace. No Lovable UI, Supabase backend, AI worker or other external data system is required.
+A standalone MCP connector for **multiple independent artists**, each using an authorized Notion workspace. No additional UI, database backend, AI worker or other external data system is required.
 
 ## Architecture
 
