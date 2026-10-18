@@ -13,6 +13,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { checkToolScope, validScopes, validPkceVerifier } from "./auth.js";
 import { NotionAdapter } from "./adapters/notion.js";
+import { SharedNotionArtistAdapter, allowedArtistsForOwner, assertArtistAllowed } from "./adapters/shared-notion.js";
 import {
   actionFingerprint,
   assertExternalActionMayBeStaged,
@@ -183,32 +184,55 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
   if (connection?.provider !== "notion" || typeof connection?.token !== "string" || !connection?.workspaceId) {
     throw new Error("A Notion OAuth connection is required");
   }
-  const adapter = new NotionAdapter({ token: connection.token });
-  // Each OAuth connection maps to exactly one Notion workspace/artist OS.
-  const currentArtistId = () => String(connection.workspaceId);
+  const shared = Boolean(process.env.NOTION_ARTISTS_DATABASE_ID && process.env.NOTION_TASKS_DATABASE_ID);
+  const allowed = shared ? allowedArtistsForOwner(String(connection.ownerId ?? ""), String(connection.workspaceId)) : [];
+  const adapter = shared
+    ? new SharedNotionArtistAdapter({
+        token: connection.token,
+        artistsDb: process.env.NOTION_ARTISTS_DATABASE_ID!,
+        tasksDb: process.env.NOTION_TASKS_DATABASE_ID!,
+        allowedArtistIds: allowed,
+      })
+    : new NotionAdapter({ token: connection.token });
+  const currentArtistId = () => {
+    if (shared) {
+      if (allowed.length !== 1) throw new Error("Select an artistId explicitly for this connection.");
+      return allowed[0];
+    }
+    return String(connection.workspaceId);
+  };
+  const resolveArtist = (id?: string) => {
+    if (!shared) return currentArtistId();
+    if (!id) return currentArtistId();
+    assertArtistAllowed(id, allowed);
+    return id;
+  };
   const server = new McpServer({
     name: "independent-artist-os",
     version: "0.3.0",
   });
 
+  if (shared) server.tool("list_artists", "List artists authorized for this OAuth owner.", {}, async () => asText(await (adapter as SharedNotionArtistAdapter).listArtists()));
+
   server.tool(
     "get_artist_context",
     "Read the connected Notion artist's master context.",
-    {},
-    async () => asText(await adapter.getArtistContext(currentArtistId())),
+    { artistId: z.string().optional() },
+    async ({ artistId }) => asText(await adapter.getArtistContext(resolveArtist(artistId))),
   );
 
   server.tool(
     "get_operating_snapshot",
     "Read artist context, projects and tasks from the connected Notion workspace.",
-    {},
-    async () => asText(await adapter.getOperatingSnapshot(currentArtistId())),
+    { artistId: z.string().optional() },
+    async ({ artistId }) => asText(await adapter.getOperatingSnapshot(resolveArtist(artistId))),
   );
 
   server.tool(
     "create_task",
     "Create an internal Music OS task. This never performs the external action represented by the task.",
     {
+      artistId: z.string().optional(),
       task: z.string().min(1),
       nextAction: z.string().min(1),
       priority: z.enum(["Critical", "High", "Medium", "Low"]).optional(),
@@ -220,7 +244,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     },
     async (input) => {
       assertInternalWriteAllowed();
-      return asText(await adapter.createTask({ artistId: currentArtistId(), ...input }));
+      return asText(await adapter.createTask({ ...input, artistId: resolveArtist(input.artistId) }));
     },
   );
 
@@ -228,6 +252,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     "update_task",
     "Update an existing internal Music OS task.",
     {
+      artistId: z.string().optional(),
       taskId: z.string().min(1),
       status: z.enum(["Not Started", "In Progress", "Waiting", "Done"]).optional(),
       priority: z.enum(["Critical", "High", "Medium", "Low"]).optional(),
@@ -238,10 +263,11 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     },
     async (input) => {
       assertInternalWriteAllowed();
-      return asText(await adapter.updateTask({ artistId: currentArtistId(), ...input }));
+      return asText(await adapter.updateTask({ ...input, artistId: resolveArtist(input.artistId) }));
     },
   );
 
+  if (!shared) {
   server.tool(
     "request_approval",
     "Stage a consequential action for explicit human approval. This tool never executes the external action.",
@@ -404,6 +430,8 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
       return asText(await notionAdapter.advanceWorkflow({ artistId: currentArtistId(), ...input }));
     },
   );
+
+  }
 
   }
 
@@ -600,6 +628,7 @@ const httpServer = createServer(async (req, res) => {
       workspaceId: notion.workspace_id,
       workspaceName: notion.workspace_name,
       botId: notion.bot_id,
+      ownerId: notion.owner?.user?.id,
       duplicatedTemplateId: notion.duplicated_template_id,
     });
     const authCode = signPayload({
