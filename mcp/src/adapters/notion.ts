@@ -132,12 +132,22 @@ export class NotionAdapter implements MusicOsAdapter {
       "artist master context",
       "command center",
       "welcome to your new music os",
+      "00 — ai manager command center",
     ]);
     this.projectsDb ??= findOne("database", ["projects", "project"]);
-    this.tasksDb ??= findOne("database", ["tasks", "task"]);
+    this.tasksDb ??= findOne("database", ["management tasks", "tasks"]);
     this.runsDb ??= findOne("database", ["automation runs", "agent runs"]);
     this.workflowRegistryDb ??= findOne("database", ["workflow registry"]);
     this.workflowRunsDb ??= findOne("database", ["workflow runs"]);
+
+    // The Artist OS Tools 2.0 template is a different schema from the legacy
+    // Projects/Tasks/Workflow Registry model. Do not silently mix them.
+    // A separate adapter is required for its Artist Master Context rows.
+    const managementTasks = findOne("database", ["management tasks"]);
+    const artistMaster = findOne("database", ["artist master context"]);
+    if (managementTasks && artistMaster && !this.projectsDb) {
+      throw new Error("Artist OS Tools 2.0 detected: multi-artist row isolation and template schema mapping are not configured. Refusing unsafe legacy writes.");
+    }
 
     if (
       !this.artistContextPageId ||
