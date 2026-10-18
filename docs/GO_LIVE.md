@@ -12,4 +12,4 @@
 - [ ] Secrets and Notion API response bodies are not logged or exposed.
 - [ ] Deployment rollback, monitoring, incident ownership, and credential revocation are tested.
 
-Do not reuse old Lovable/Supabase/OAuth connections. Reconnect each artist's separate Notion workspace through the new connector. No database migration, artist record deletion, or automatic production deployment occurs as part of this repository change.
+Do not reuse legacy OAuth connections. Reconnect each artist's separate Notion workspace through the new connector. No database migration, artist record deletion, or automatic production deployment occurs as part of this repository change.
