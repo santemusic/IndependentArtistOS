@@ -319,7 +319,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
 
 
   {
-    const notionAdapter = adapter;
+    const notionAdapter = adapter as NotionAdapter;
     server.tool(
     "get_workflow",
     "Read one active Master Workflow definition by workflow ID.",
