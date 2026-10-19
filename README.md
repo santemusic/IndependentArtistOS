@@ -1,6 +1,6 @@
 # Independent Artist OS — Notion MCP connector
 
-A standalone MCP connector for **multiple independent artists**, each using an authorized Notion workspace. No additional UI, database backend, AI worker or other external data system is required.
+A Notion-only MCP connector for **multiple independent artists**. It supports an ACL-scoped shared Notion workspace for artist context and internal tasks, as well as a separate legacy workspace adapter. No additional UI, database backend, or AI worker is required.
 
 ## Architecture
 
@@ -8,9 +8,9 @@ A standalone MCP connector for **multiple independent artists**, each using an a
 - The server redirects each connection to **Notion OAuth**.
 - Each authenticated connection is bound to its own Notion workspace and access token. There is no global fallback Notion token.
 - Reads and governed internal writes go directly to Notion through the existing adapter.
-- For artists in different Notion workspaces, authorize one MCP connection per workspace. Do not share a connection across unrelated artists.
+- For multiple artists in one Notion workspace, configure the shared-workspace databases and a server-side OAuth-owner/artist ACL. Artist-specific calls require an authorized Artist Master Context page ID.
 
-See [mcp/README.md](mcp/README.md) for setup and expected Notion databases and [SECURITY.md](SECURITY.md) for isolation boundaries.
+See [Monthly Artist Growth Flywheel](docs/MONTHLY_ARTIST_GROWTH_FLYWHEEL.md) for the release → data → content → Meta Ads → growth → PR/promoters → bookings → revenue → forecast cycle. Its 10 reusable task templates are stored in Notion `Management Tasks` without artist ownership; operational tasks must be materialized per authorized artist. See [mcp/README.md](mcp/README.md) for shared-workspace setup and [SECURITY.md](SECURITY.md) for isolation boundaries.
 
 ## Local build
 
