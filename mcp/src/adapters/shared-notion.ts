@@ -1,4 +1,4 @@
-import type { ArtistContext, OperatingSnapshot, TaskRecord, CreateTaskInput, UpdateTaskInput } from "../domain.js";
+import type { ArtistContext, OperatingSnapshot, TaskRecord, CreateTaskInput, UpdateTaskInput, RuntimeControl } from "../domain.js";
 import { getRuntimeControl } from "../governance.js";
 
 // Artist IDs are Notion page IDs in the shared Artist Master Context database.
@@ -7,6 +7,7 @@ export function allowedArtistsForOwner(ownerId: string, workspaceId: string, raw
   if (!raw || !ownerId || !workspaceId) throw new Error("Artist ACL is not configured.");
   let acl: Record<string, unknown>;
   try { acl = JSON.parse(raw); } catch { throw new Error("Invalid artist ACL configuration."); }
+  if (!acl || typeof acl !== "object" || Array.isArray(acl)) throw new Error("Invalid artist ACL configuration.");
   const entries = acl[workspaceId + ":" + ownerId];
   if (!Array.isArray(entries) || !entries.length || !entries.every((x) => typeof x === "string" && /^[a-f0-9-]{32,36}$/i.test(x))) {
     throw new Error("OAuth owner has no valid artist authorization.");
@@ -35,22 +36,46 @@ export class SharedNotionArtistAdapter {
   private readonly token: string;
   private readonly artistsDb: string;
   private readonly tasksDb: string;
+  private readonly controlDb: string;
   private readonly allowed: readonly string[];
-  constructor(config: { token: string; artistsDb: string; tasksDb: string; allowedArtistIds: string[] }) {
+  constructor(config: { token: string; artistsDb: string; tasksDb: string; controlDb?: string; allowedArtistIds: string[] }) {
     this.token = config.token;
     this.artistsDb = config.artistsDb;
     this.tasksDb = config.tasksDb;
+    this.controlDb = config.controlDb ?? "";
     this.allowed = [...config.allowedArtistIds];
     if (!this.token || !this.allowed.length || !this.artistsDb || !this.tasksDb) throw new Error("Shared Notion connector is not configured.");
   }
   private async request(path: string, method = "GET", body?: unknown): Promise<any> {
     const response = await fetch("https://api.notion.com/v1" + path, {
       method,
+      signal: AbortSignal.timeout(15000),
       headers: { Authorization: "Bearer " + this.token, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!response.ok) throw new Error("Notion request failed (HTTP " + response.status + ").");
     return response.json();
+  }
+  async getRuntimeControl(): Promise<RuntimeControl> {
+    if (!this.controlDb) throw new Error("Notion Automation Control database is required.");
+    const result = await this.request("/databases/" + this.controlDb + "/query", "POST", {
+      page_size: 2, filter: { property: "Control", title: { equals: "Global Manager Policy" } },
+    });
+    if (result.has_more || result.results?.length !== 1) throw new Error("Automation Control is missing or ambiguous.");
+    const p = result.results[0];
+    const mode = text(p.properties?.Mode);
+    const external = text(p.properties?.["External Actions"]).replace(/ /g, "_");
+    if (!["PAUSED", "SUPERVISED", "ACTIVE"].includes(mode) || !["BLOCKED", "APPROVAL_ONLY", "ALLOWED"].includes(external)) {
+      throw new Error("Invalid Automation Control policy.");
+    }
+    const env = getRuntimeControl();
+    return {
+      mode: env.mode === "PAUSED" || mode === "PAUSED" ? "PAUSED" : "SUPERVISED",
+      externalActions: env.externalActions === "BLOCKED" || external === "BLOCKED" ? "BLOCKED" : "APPROVAL_ONLY",
+    };
+  }
+  private async assertWriteAllowed(): Promise<void> {
+    if ((await this.getRuntimeControl()).mode === "PAUSED") throw new Error("Music OS runtime is PAUSED. Writes are disabled.");
   }
   private async artist(artistId: string): Promise<Page> {
     assertArtistAllowed(artistId, this.allowed);
@@ -112,15 +137,17 @@ export class SharedNotionArtistAdapter {
       if (cursor) body.start_cursor = cursor;
       const result = await this.request("/databases/" + this.tasksDb + "/query", "POST", body);
       for (const p of result.results ?? []) {
-        if (text(p.properties?.["Artist ID"]) !== artistId) throw new Error("Notion returned an out-of-scope task.");
+        if (p.parent?.database_id?.replace(/-/g, "") !== this.tasksDb.replace(/-/g, "") || text(p.properties?.["Artist ID"]) !== artistId) throw new Error("Notion returned an out-of-scope task.");
         if (text(p.properties?.Status) !== "Done") openTasks.push(this.taskRecord(p));
       }
       cursor = result.has_more ? result.next_cursor : undefined;
     } while (cursor);
-    return { artist, activeProjects: [], openTasks, runtime: getRuntimeControl() };
+    return { artist, activeProjects: [], openTasks, runtime: await this.getRuntimeControl() };
   }
   async createTask(input: CreateTaskInput): Promise<TaskRecord> {
+    if (input.approvalState && !["Not Required", "Pending"].includes(input.approvalState)) throw new Error("Approval decisions cannot be set by an agent.");
     await this.artist(input.artistId);
+    await this.assertWriteAllowed();
     if (input.projectId) throw new Error("Project linking is unavailable until scoped project ownership is configured.");
     const properties: Record<string, unknown> = {
       Task: title(input.task), "Artist ID": rich(input.artistId),
@@ -132,12 +159,13 @@ export class SharedNotionArtistAdapter {
     };
     if (input.dueDate) properties["Due Date"] = { date: { start: input.dueDate } };
     const p: Page = await this.request("/pages", "POST", { parent: { database_id: this.tasksDb }, properties });
-    if (text(p.properties?.["Artist ID"]) !== input.artistId) throw new Error("Created task ownership verification failed.");
+    if (p.parent?.database_id?.replace(/-/g, "") !== this.tasksDb.replace(/-/g, "") || text(p.properties?.["Artist ID"]) !== input.artistId) throw new Error("Created task ownership verification failed.");
     return this.taskRecord(p);
   }
   async updateTask(input: UpdateTaskInput): Promise<TaskRecord> {
     await this.artist(input.artistId);
     await this.taskPage(input.taskId, input.artistId);
+    await this.assertWriteAllowed();
     if (input.approvalState) throw new Error("Approval decisions cannot be set by an agent.");
     const properties: Record<string, unknown> = {};
     if (input.status) properties.Status = { status: { name: input.status } };

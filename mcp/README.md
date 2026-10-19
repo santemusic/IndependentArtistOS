@@ -8,11 +8,11 @@ This Node.js 22 / TypeScript server exposes Streamable HTTP MCP at `/mcp`. It ha
 2. Configure the four variables in [`.env.example`](.env.example) on the server.
 3. Share the artist's Notion pages/databases with the integration.
 4. Add `https://YOUR_MCP_HOST/mcp` as an MCP connection in ChatGPT. The OAuth flow redirects to Notion to grant access.
-5. Repeat the authorization with a **different Notion workspace** for each independent artist. Different connections retain separate encrypted tokens and workspace IDs.
+5. For multiple artists in one workspace, configure the shared-workspace mode below. Each OAuth owner needs an explicit artist allowlist.
 
 The connector auto-discovers the `Artist Master Context` (or `Command Center`) page and the `Projects`, `Tasks`, `Automation Runs`, `Workflow Registry` and `Workflow Runs` databases, using the authenticated workspace's Notion visibility. Give resources unambiguous names. Missing or ambiguous required resources cause the connection's operations to fail closed.
 
-One Notion workspace is treated as one artist tenant. Multiple artists within a single Notion workspace, workspace-level shared databases, or multiple deployments sharing an in-memory OAuth code replay store are **not** supported as isolated artist tenants. Separate Notion workspaces are required for actual isolation. Legacy connections need to be removed from ChatGPT and reauthorized through Notion.
+Without shared-workspace configuration, one Notion workspace is treated as one artist tenant. Shared-workspace mode adds explicit owner/artist ACL checks. Run exactly one instance; OAuth code replay tracking is in memory and codes are bound to a random process boot ID; restart invalidates pending codes. Legacy connections must be reauthorized through Notion.
 
 ## Available operations
 
@@ -52,3 +52,5 @@ Set `NOTION_ARTIST_ACL_JSON` to a JSON object whose keys are `<notion-workspace-
 Shared-workspace mode currently supports artist listing, artist context, snapshots and internal tasks only. Other workflow and approval tools are intentionally not exposed in this mode. Existing untagged tasks are not automatically migrated and are not returned in artist-scoped queries. Never grant access based only on a model-supplied artist ID.
 
 **Deployment blocker:** Set the three shared-workspace environment variables in the deployment environment, validate the Notion OAuth owner identity and run end-to-end tests before merging. Notion OAuth is workspace-wide: this connector enforces API-level row filtering, but it does not provide native Notion UI permission isolation for people who can access the underlying databases.
+
+Set `NOTION_CONTROL_DATABASE_ID` to `e1d4b9d1b21c4f6390232626edaa5bc2`. Shared-mode writes query the unique `Global Manager Policy` in Notion and fail closed when missing, ambiguous, invalid, unavailable, or PAUSED. Environment policy can further restrict it. Agents cannot create Approved/Rejected tasks or edit approval decisions. This does not certify scheduling, durable idempotency or full monthly workflow support.

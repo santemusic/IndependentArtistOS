@@ -26,6 +26,8 @@ const port = Number(process.env.PORT ?? process.env.MUSIC_OS_PORT ?? 8787);
 const publicOrigin = (process.env.MCP_PUBLIC_URL ?? "https://independent-artist-os-mcp.onrender.com").replace(/\/$/, "");
 const resourceId = `${publicOrigin}${MCP_PATH}`;
 const oauthIssuer = publicOrigin;
+// Authorization codes are bound to this process: restart invalidates outstanding codes.
+const oauthBootId = randomUUID();
 const locallyConsumedOauthCodes = new Map<string, number>();
 
 function consumeCodeOnce(hash: string, expiresAt: number): boolean {
@@ -175,7 +177,13 @@ function writeJson(res: any, status: number, body: unknown, extraHeaders: Record
 
 async function readBody(req: any): Promise<string> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  let size = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > 1024 * 1024) throw new Error("Request body too large");
+    chunks.push(buffer);
+  }
   return Buffer.concat(chunks).toString("utf8");
 }
 
@@ -192,6 +200,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
         token: connection.token,
         artistsDb: process.env.NOTION_ARTISTS_DATABASE_ID!,
         tasksDb: process.env.NOTION_TASKS_DATABASE_ID!,
+        controlDb: process.env.NOTION_CONTROL_DATABASE_ID,
         allowedArtistIds: allowed,
       })
     : new NotionAdapter({ token: connection.token });
@@ -441,13 +450,21 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     "get_runtime_control",
     "Read current runtime mode and external-action policy.",
     {},
-    async () => asText(getRuntimeControl()),
+    async () => asText(shared ? await (adapter as SharedNotionArtistAdapter).getRuntimeControl() : getRuntimeControl()),
   );
 
   return server;
 }
 
-const httpServer = createServer(async (req, res) => {
+const httpServer = createServer((req, res) => {
+  void handleHttpRequest(req, res).catch(() => {
+    // Never expose provider errors, tokens, codes or request bodies.
+    if (!res.headersSent) writeJson(res, 502, { error: "request_failed" });
+    else res.end();
+  });
+});
+
+async function handleHttpRequest(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
   if (req.method === "GET" && url.pathname === "/health") {
@@ -572,6 +589,7 @@ const httpServer = createServer(async (req, res) => {
 
     const tokenResponse = await fetch("https://api.notion.com/v1/oauth/token", {
       method: "POST",
+      signal: AbortSignal.timeout(15000),
       headers: {
         Authorization:
           "Basic " +
@@ -635,6 +653,7 @@ const httpServer = createServer(async (req, res) => {
     });
     const authCode = signPayload({
       kind: "auth_code",
+      boot: oauthBootId,
       nonce: randomUUID(),
       client_id: clientId,
       redirect_uri: redirectUri,
@@ -669,6 +688,7 @@ const httpServer = createServer(async (req, res) => {
       if (
         !payload ||
         payload.kind !== "auth_code" ||
+        payload.boot !== oauthBootId ||
         typeof payload.nonce !== "string" ||
         payload.resource !== resourceId ||
         !validScopes(payload.scope) ||
@@ -827,7 +847,7 @@ const httpServer = createServer(async (req, res) => {
   }
 
   res.writeHead(404).end("Not Found");
-});
+}
 
 httpServer.listen(port, () => {
   console.log(`Independent Artist OS MCP listening on http://localhost:${port}${MCP_PATH}`);
