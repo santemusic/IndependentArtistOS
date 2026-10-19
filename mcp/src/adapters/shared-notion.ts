@@ -49,6 +49,7 @@ export class SharedNotionArtistAdapter {
   private async request(path: string, method = "GET", body?: unknown): Promise<any> {
     const response = await fetch("https://api.notion.com/v1" + path, {
       method,
+      signal: AbortSignal.timeout(15000),
       headers: { Authorization: "Bearer " + this.token, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -136,7 +137,7 @@ export class SharedNotionArtistAdapter {
       if (cursor) body.start_cursor = cursor;
       const result = await this.request("/databases/" + this.tasksDb + "/query", "POST", body);
       for (const p of result.results ?? []) {
-        if (text(p.properties?.["Artist ID"]) !== artistId) throw new Error("Notion returned an out-of-scope task.");
+        if (p.parent?.database_id?.replace(/-/g, "") !== this.tasksDb.replace(/-/g, "") || text(p.properties?.["Artist ID"]) !== artistId) throw new Error("Notion returned an out-of-scope task.");
         if (text(p.properties?.Status) !== "Done") openTasks.push(this.taskRecord(p));
       }
       cursor = result.has_more ? result.next_cursor : undefined;

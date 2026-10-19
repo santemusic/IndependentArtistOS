@@ -12,7 +12,7 @@ This Node.js 22 / TypeScript server exposes Streamable HTTP MCP at `/mcp`. It ha
 
 The connector auto-discovers the `Artist Master Context` (or `Command Center`) page and the `Projects`, `Tasks`, `Automation Runs`, `Workflow Registry` and `Workflow Runs` databases, using the authenticated workspace's Notion visibility. Give resources unambiguous names. Missing or ambiguous required resources cause the connection's operations to fail closed.
 
-Without shared-workspace configuration, one Notion workspace is treated as one artist tenant. Shared-workspace mode adds explicit owner/artist ACL checks. Run exactly one instance; OAuth code replay tracking is currently in memory. Legacy connections must be reauthorized through Notion.
+Without shared-workspace configuration, one Notion workspace is treated as one artist tenant. Shared-workspace mode adds explicit owner/artist ACL checks. Run exactly one instance; OAuth code replay tracking is in memory and codes are bound to a random process boot ID; restart invalidates pending codes. Legacy connections must be reauthorized through Notion.
 
 ## Available operations
 

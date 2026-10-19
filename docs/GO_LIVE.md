@@ -26,3 +26,11 @@ Do not reuse legacy OAuth connections. Reconnect through Notion, verify the OAut
 Remaining go-live gates: public Notion integration registration and secure secret provisioning; verified owner-to-artist access matrix; real OAuth/refresh/reconnect and two-artist isolation tests; monthly module schema/ownership mapping, durable deduplication/audit and retry behavior; recoverable deploy artifact and configuration rollback. No scheduler or external actions may be enabled before these pass.
 
 The listed live deploy is a rollback reference, not proof its build artifact is still retained. Verify rollback eligibility before replacing production. Preserve configuration securely outside GitHub; deployment rollback does not roll back Notion writes.
+
+## Additional validation (2026-10-19)
+
+- 16 automated tests pass, including an actual local HTTP server with a test-only mocked Notion OAuth upstream. Typecheck and build pass.
+- HTTP tests cover registration redirect validation, invalid callback, provider network/JSON failures without process termination, PKCE mismatch, single-use code replay, stale code rejection after restart, refresh client binding, refresh across restart, read-only write rejection, and empty artist ACL rejection.
+- Authorization codes now carry a random process boot ID: restarting invalidates pending codes rather than reopening replay. One instance remains required; clients must restart authorization if a deploy interrupts it.
+- OAuth and shared Notion requests have a 15-second timeout; request bodies are limited to 1 MiB; unexpected HTTP errors return a generic response without provider payloads.
+- These are local integration tests, not a live Notion authorization or a customer permission certificate. No real customer ACLs, accounts or template records were created.
