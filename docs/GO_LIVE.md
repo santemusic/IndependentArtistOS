@@ -29,8 +29,10 @@ The listed live deploy is a rollback reference, not proof its build artifact is 
 
 ## Additional validation (2026-10-19)
 
-- 16 automated tests pass, including an actual local HTTP server with a test-only mocked Notion OAuth upstream. Typecheck and build pass.
+- 21 automated tests pass, including an actual local HTTP server with a test-only mocked Notion OAuth upstream. Typecheck and build pass.
 - HTTP tests cover registration redirect validation, invalid callback, provider network/JSON failures without process termination, PKCE mismatch, single-use code replay, stale code rejection after restart, refresh client binding, refresh across restart, read-only write rejection, and empty artist ACL rejection.
 - Authorization codes now carry a random process boot ID: restarting invalidates pending codes rather than reopening replay. One instance remains required; clients must restart authorization if a deploy interrupts it.
 - OAuth and shared Notion requests have a 15-second timeout; request bodies are limited to 1 MiB; unexpected HTTP errors return a generic response without provider payloads.
 - These are local integration tests, not a live Notion authorization or a customer permission certificate. No real customer ACLs, accounts or template records were created.
+
+Additional adapter tests verify paginated isolation, completed-task exclusion, foreign query database rejection, post-write ownership checking, protected approval updates and sanitized upstream denial without write retry.
