@@ -72,14 +72,14 @@ export class NotionAdapter implements MusicOsAdapter {
 
   constructor(config: NotionAdapterConfig = {}) {
     this.token = config.token ?? requiredEnv("NOTION_TOKEN");
-    this.artistContextPageId = config.artistContextPageId ?? process.env.MUSIC_OS_ARTIST_CONTEXT_PAGE_ID;
-    this.projectsDb = config.projectsDatabaseId ?? process.env.MUSIC_OS_PROJECTS_DATABASE_ID;
-    this.tasksDb = config.tasksDatabaseId ?? process.env.MUSIC_OS_TASKS_DATABASE_ID;
-    this.runsDb = config.automationRunsDatabaseId ?? process.env.MUSIC_OS_AUTOMATION_RUNS_DATABASE_ID;
+    this.artistContextPageId = config.artistContextPageId;
+    this.projectsDb = config.projectsDatabaseId;
+    this.tasksDb = config.tasksDatabaseId;
+    this.runsDb = config.automationRunsDatabaseId;
     this.workflowRegistryDb =
-      config.workflowRegistryDatabaseId ?? process.env.MUSIC_OS_WORKFLOW_REGISTRY_DATABASE_ID;
+      config.workflowRegistryDatabaseId;
     this.workflowRunsDb =
-      config.workflowRunsDatabaseId ?? process.env.MUSIC_OS_WORKFLOW_RUNS_DATABASE_ID;
+      config.workflowRunsDatabaseId;
     this.resourcesResolved = Boolean(
       this.artistContextPageId &&
       this.projectsDb &&
@@ -123,7 +123,7 @@ export class NotionAdapter implements MusicOsAdapter {
       if (matches.length === 1) return matches[0].id;
       if (matches.length > 1) {
         const exact = matches.find((item: any) => candidates.includes(item.title.toLowerCase()));
-        if (exact) return exact.id;
+        if (exact && matches.filter((item: any) => item.title.toLowerCase() === exact.title.toLowerCase()).length === 1) return exact.id;
       }
       return undefined;
     };
@@ -132,12 +132,22 @@ export class NotionAdapter implements MusicOsAdapter {
       "artist master context",
       "command center",
       "welcome to your new music os",
+      "00 — ai manager command center",
     ]);
     this.projectsDb ??= findOne("database", ["projects", "project"]);
-    this.tasksDb ??= findOne("database", ["tasks", "task"]);
+    this.tasksDb ??= findOne("database", ["management tasks", "tasks"]);
     this.runsDb ??= findOne("database", ["automation runs", "agent runs"]);
     this.workflowRegistryDb ??= findOne("database", ["workflow registry"]);
     this.workflowRunsDb ??= findOne("database", ["workflow runs"]);
+
+    // The Artist OS Tools 2.0 template is a different schema from the legacy
+    // Projects/Tasks/Workflow Registry model. Do not silently mix them.
+    // A separate adapter is required for its Artist Master Context rows.
+    const managementTasks = findOne("database", ["management tasks"]);
+    const artistMaster = findOne("database", ["artist master context"]);
+    if (managementTasks && artistMaster && !this.projectsDb) {
+      throw new Error("Artist OS Tools 2.0 detected: multi-artist row isolation and template schema mapping are not configured. Refusing unsafe legacy writes.");
+    }
 
     if (
       !this.artistContextPageId ||
@@ -147,14 +157,10 @@ export class NotionAdapter implements MusicOsAdapter {
       !this.workflowRegistryDb ||
       !this.workflowRunsDb
     ) {
-      const visible = normalized
-        .filter((item: any) => item.title)
-        .map((item: any) => `${item.object}: ${item.title}`)
-        .join(", ");
       throw new Error(
         "Could not auto-discover the Music OS pages/databases in this Notion connection. " +
           "Expected Artist Master Context/Command Center, Projects, Tasks, Automation Runs, Workflow Registry, and Workflow Runs. " +
-          "Visible objects: " + visible,
+          "Check resource sharing and use unique resource titles.",
       );
     }
 
@@ -172,7 +178,7 @@ export class NotionAdapter implements MusicOsAdapter {
       },
     });
     if (!response.ok) {
-      throw new Error("Notion API " + response.status + ": " + await response.text());
+      throw new Error("Notion API request failed (HTTP " + response.status + ").");
     }
     return response.json();
   }
@@ -306,6 +312,11 @@ export class NotionAdapter implements MusicOsAdapter {
   }
 
   async updateTask(input: UpdateTaskInput): Promise<TaskRecord> {
+    await this.resolveResources();
+    const existingPage = await this.request("/pages/" + input.taskId);
+    if (existingPage.parent?.database_id !== this.tasksDb) {
+      throw new Error("Task is not in the connected artist's Tasks database.");
+    }
     const properties: Record<string, unknown> = {};
     if (input.status) properties.Status = { status: { name: input.status } };
     if (input.priority) properties.Priority = { select: { name: input.priority } };
@@ -447,7 +458,8 @@ export class NotionAdapter implements MusicOsAdapter {
     });
     const page = pages.find((candidate) => propertyText(candidate, "Run ID") === runId);
     if (!page) throw new Error("Workflow run not found: " + runId);
-    return this.workflowRunFromPage(page);
+    const run = this.workflowRunFromPage(page);
+    return run;
   }
 
   async advanceWorkflow(input: AdvanceWorkflowInput): Promise<WorkflowRun> {
