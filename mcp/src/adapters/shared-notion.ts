@@ -132,6 +132,7 @@ export class SharedNotionArtistAdapter {
     };
     if (input.dueDate) properties["Due Date"] = { date: { start: input.dueDate } };
     const p: Page = await this.request("/pages", "POST", { parent: { database_id: this.tasksDb }, properties });
+    if (text(p.properties?.["Artist ID"]) !== input.artistId) throw new Error("Created task ownership verification failed.");
     return this.taskRecord(p);
   }
   async updateTask(input: UpdateTaskInput): Promise<TaskRecord> {
