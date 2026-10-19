@@ -42,3 +42,13 @@ npm start
 ```
 
 `GET /health` confirms process readiness, not Notion authorization or Notion API availability. OAuth authorization codes are consumed in process memory; **run exactly one instance** until a durable replay store is implemented. The service does not auto-deploy. Follow [go-live checks](../docs/GO_LIVE.md).
+
+## Shared-workspace mode (Artist OS Tools 2.0)
+
+Configure `NOTION_ARTISTS_DATABASE_ID` as the **database ID** `4abbf61641ad44f6be08fd6e54b1e9d4` and `NOTION_TASKS_DATABASE_ID` as `8cde002082364837a3f8f1566f3cf950` for the connected Artist OS Tools 2.0 template. These are database IDs, not the `collection://` data-source IDs. The Management Tasks database must have a rich-text `Artist ID` property (added on 2026-10-19).
+
+Set `NOTION_ARTIST_ACL_JSON` to a JSON object whose keys are `<notion-workspace-id>:<notion-oauth-owner-user-id>` and values are arrays of permitted Artist Master Context **page IDs**. Obtain these IDs from the real Notion OAuth response and artist pages; do not use names, arbitrary IDs or placeholders in production. An OAuth owner with no ACL entry is denied access. For multiple authorized artists, pass `artistId` explicitly to context, snapshot and task tools.
+
+Shared-workspace mode currently supports artist listing, artist context, snapshots and internal tasks only. Other workflow and approval tools are intentionally not exposed in this mode. Existing untagged tasks are not automatically migrated and are not returned in artist-scoped queries. Never grant access based only on a model-supplied artist ID.
+
+**Deployment blocker:** Set the three shared-workspace environment variables in the deployment environment, validate the Notion OAuth owner identity and run end-to-end tests before merging. Notion OAuth is workspace-wide: this connector enforces API-level row filtering, but it does not provide native Notion UI permission isolation for people who can access the underlying databases.
