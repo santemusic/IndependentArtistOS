@@ -192,6 +192,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
         token: connection.token,
         artistsDb: process.env.NOTION_ARTISTS_DATABASE_ID!,
         tasksDb: process.env.NOTION_TASKS_DATABASE_ID!,
+        controlDb: process.env.NOTION_CONTROL_DATABASE_ID,
         allowedArtistIds: allowed,
       })
     : new NotionAdapter({ token: connection.token });
@@ -441,7 +442,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     "get_runtime_control",
     "Read current runtime mode and external-action policy.",
     {},
-    async () => asText(getRuntimeControl()),
+    async () => asText(shared ? await (adapter as SharedNotionArtistAdapter).getRuntimeControl() : getRuntimeControl()),
   );
 
   return server;

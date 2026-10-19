@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import type { ExternalActionsMode, RuntimeControl, RuntimeMode } from "./domain.js";
 
 export function getRuntimeControl(): RuntimeControl {
+  if (process.env.MUSIC_OS_RUNTIME_MODE && !["PAUSED", "SUPERVISED", "ACTIVE"].includes(process.env.MUSIC_OS_RUNTIME_MODE)) throw new Error("Invalid runtime mode.");
+  if (process.env.MUSIC_OS_EXTERNAL_ACTIONS && !["BLOCKED", "APPROVAL_ONLY", "ALLOWED"].includes(process.env.MUSIC_OS_EXTERNAL_ACTIONS)) throw new Error("Invalid external action policy.");
   return {
     mode: (process.env.MUSIC_OS_RUNTIME_MODE ?? "SUPERVISED") as RuntimeMode,
     externalActions: (process.env.MUSIC_OS_EXTERNAL_ACTIONS ?? "APPROVAL_ONLY") as ExternalActionsMode,
