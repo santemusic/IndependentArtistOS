@@ -269,6 +269,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
   );
 
   if (!shared) {
+    const legacyAdapter = adapter as NotionAdapter;
   server.tool(
     "request_approval",
     "Stage a consequential action for explicit human approval. This tool never executes the external action.",
@@ -287,7 +288,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
         relatedObject: input.relatedObject ?? null,
       });
       return asText(
-        await adapter.requestApproval({
+        await legacyAdapter.requestApproval({
           artistId: currentArtistId(),
           ...input,
           actionFingerprint: fingerprint,
@@ -312,7 +313,7 @@ function createMusicOsServer(authPayload: Record<string, any> = {}) {
     async (input) => {
       assertInternalWriteAllowed();
       const runId = input.runId ?? randomUUID();
-      return asText(await adapter.logAgentRun({ artistId: currentArtistId(), ...input, runId }));
+      return asText(await legacyAdapter.logAgentRun({ artistId: currentArtistId(), ...input, runId }));
     },
   );
 
